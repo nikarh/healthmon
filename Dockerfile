@@ -1,5 +1,5 @@
 # Build UI
-FROM node:22-bullseye AS webbuild
+FROM node:24.13.1-bullseye AS webbuild
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
