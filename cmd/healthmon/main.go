@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"log"
 	"net/http"
 	"os/signal"
@@ -44,7 +45,11 @@ func main() {
 	broadcaster := api.NewBroadcaster()
 	server := api.NewServer(st, broadcaster)
 	if hasWebDist {
-		server.WithStatic(http.FS(webDist))
+		staticFS, err := fs.Sub(webDist, "web/dist")
+		if err != nil {
+			log.Fatalf("static fs: %v", err)
+		}
+		server.WithStatic(http.FS(staticFS))
 	}
 	mon := monitor.New(cfg, st, server)
 
