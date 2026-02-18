@@ -1,7 +1,7 @@
 # healthmon
 
-[![CI](https://github.com/nikaarh/healthmon/actions/workflows/ci.yml/badge.svg)](https://github.com/nikaarh/healthmon/actions/workflows/ci.yml)
-[![Release](https://github.com/nikaarh/healthmon/actions/workflows/release.yml/badge.svg)](https://github.com/nikaarh/healthmon/actions/workflows/release.yml)
+[![CI](https://github.com/nikarh/healthmon/actions/workflows/ci.yml/badge.svg)](https://github.com/nikarh/healthmon/actions/workflows/ci.yml)
+[![Release](https://github.com/nikarh/healthmon/actions/workflows/release.yml/badge.svg)](https://github.com/nikarh/healthmon/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE-MIT)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE-APACHE)
 
@@ -44,7 +44,7 @@ docker run --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  ghcr.io/nikaarh/healthmon:latest
+  ghcr.io/nikarh/healthmon:latest
 ```
 
 ## Run with docker-compose
@@ -62,7 +62,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   healthmon:
-    image: ghcr.io/nikaarh/healthmon:latest
+    image: ghcr.io/nikarh/healthmon:latest
     ports:
       - "8080:8080"
     environment:
