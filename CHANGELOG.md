@@ -2,9 +2,13 @@
 
 
 ## CHORE
-- v0.1.2
+- v0.1.3
+
+
+## DOCS
+- fix GitHub and GHCR owner
 
 
 ## CI
-- use git-cliff action
+- fix image tag path
 
