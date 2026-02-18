@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -40,8 +41,16 @@ func New(cfg config.Config, store *store.Store, server *api.Server) *Monitor {
 }
 
 func (m *Monitor) Start(ctx context.Context) error {
-	host := fmt.Sprintf("unix://%s", m.cfg.DockerSocket)
-	cli, err := client.NewClientWithOpts(client.WithHost(host), client.WithAPIVersionNegotiation())
+	var opts []client.Opt
+	if m.cfg.DockerHost != "" {
+		opts = append(opts, client.WithHost(m.cfg.DockerHost))
+	} else {
+		host := fmt.Sprintf("unix://%s", m.cfg.DockerSocket)
+		opts = append(opts, client.WithHost(host))
+	}
+	opts = append(opts, client.WithAPIVersionNegotiation())
+
+	cli, err := client.NewClientWithOpts(opts...)
 	if err != nil {
 		return err
 	}
@@ -105,6 +114,7 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 		return
 	}
 	name = strings.TrimPrefix(name, "/")
+	log.Printf("event: container=%s action=%s id=%s", name, msg.Action, msg.ID)
 
 	switch {
 	case msg.Action == "create":
@@ -269,8 +279,10 @@ func (m *Monitor) emit(ctx context.Context, e store.Event) {
 		return
 	}
 	e.ContainerPK = container.ID
+	log.Printf("event: type=%s severity=%s container=%s", e.Type, e.Severity, e.Container)
 	id, err := m.store.AddEvent(ctx, e)
 	if err != nil {
+		log.Printf("event persist failed: %v", err)
 		return
 	}
 	e.ID = id
@@ -321,15 +333,8 @@ func (m *Monitor) sendTelegram(ctx context.Context, e store.Event) {
 	}
 	prefix := strings.ToUpper(e.Severity)
 	text := fmt.Sprintf("[%s] %s: %s", prefix, e.Container, e.Message)
-	_ = m.telegram.Send(ctx, text)
-}
-
-func shouldAlert(eventType string) bool {
-	switch eventType {
-	case "restart_loop", "restart_healed", "image_changed", "recreated":
-		return true
-	default:
-		return false
+	if err := m.telegram.Send(ctx, text); err != nil {
+		log.Printf("telegram send failed: %v", err)
 	}
 }
 

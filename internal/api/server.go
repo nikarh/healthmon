@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"healthmon/internal/store"
 
@@ -37,7 +40,7 @@ func (s *Server) Routes() http.Handler {
 		mux.Handle("/", http.HandlerFunc(s.handleSPA))
 	}
 
-	return mux
+	return loggingMiddleware(mux)
 }
 
 func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +146,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "closing")
+	peer := clientIP(r)
+	log.Printf("ws connect: %s", peer)
+	defer func() {
+		log.Printf("ws disconnect: %s", peer)
+		conn.Close(websocket.StatusNormalClosure, "closing")
+	}()
 
 	s.broadcaster.Add(conn)
 	defer s.broadcaster.Remove(conn)
@@ -248,4 +256,38 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		log.Printf("http %s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+	})
+}
+
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if real := r.Header.Get("X-Real-Ip"); real != "" {
+		return real
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return ip
+	}
+	return r.RemoteAddr
 }

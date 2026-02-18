@@ -1,13 +1,11 @@
 # healthmon
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
-[![Release](https://github.com/OWNER/REPO/actions/workflows/release.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/release.yml)
+[![CI](https://github.com/nikaarh/healthmon/actions/workflows/ci.yml/badge.svg)](https://github.com/nikaarh/healthmon/actions/workflows/ci.yml)
+[![Release](https://github.com/nikaarh/healthmon/actions/workflows/release.yml/badge.svg)](https://github.com/nikaarh/healthmon/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE-MIT)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE-APACHE)
 
 Healthmon watches Docker containers via the Docker socket, detects restart loops, healing, and container recreation/image changes, and exposes a real-time dashboard with REST + WebSocket updates. Alerts are pushed to Telegram.
-
-Replace `OWNER/REPO` in image and badge URLs with your GitHub org/user and repo name.
 
 ## Features
 
@@ -21,7 +19,8 @@ Replace `OWNER/REPO` in image and badge URLs with your GitHub org/user and repo 
 | Env var | Default | Description |
 | --- | --- | --- |
 | `HM_DB_PATH` | `./healthmon.db` | SQLite DB path |
-| `HM_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket path |
+| `HM_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket path (used if `HM_DOCKER_HOST` is empty) |
+| `HM_DOCKER_HOST` | (empty) | Docker host URL (e.g. `tcp://socket-proxy:2375`) |
 | `HM_HTTP_ADDR` | `:8080` | HTTP bind address |
 | `HM_TG_TOKEN` | (empty) | Telegram bot token |
 | `HM_TG_CHAT_ID` | (empty) | Telegram chat ID |
@@ -31,41 +30,73 @@ Replace `OWNER/REPO` in image and badge URLs with your GitHub org/user and repo 
 
 ## Run with Docker
 
+Recommended: use a Docker socket proxy like https://github.com/11notes/docker-socket-proxy instead of mounting the raw socket.
+
 ```bash
 docker run --rm \
   -p 8080:8080 \
   -e HM_DB_PATH=/data/healthmon.db \
   -e HM_TG_TOKEN=YOUR_TOKEN \
   -e HM_TG_CHAT_ID=YOUR_CHAT_ID \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -e HM_DOCKER_HOST=tcp://socket-proxy:2375 \
   -v $(pwd)/data:/data \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  ghcr.io/OWNER/REPO/healthmon:latest
+  ghcr.io/nikaarh/healthmon:latest
 ```
 
 ## Run with docker-compose
 
 ```yaml
 services:
+  socket-proxy:
+    image: ghcr.io/11notes/docker-socket-proxy:stable
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EVENTS: 1
+      INFO: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   healthmon:
-    image: ghcr.io/OWNER/REPO/healthmon:latest
+    image: ghcr.io/nikaarh/healthmon:latest
     ports:
       - "8080:8080"
     environment:
       HM_DB_PATH: /data/healthmon.db
       HM_TG_TOKEN: YOUR_TOKEN
       HM_TG_CHAT_ID: YOUR_CHAT_ID
+      HM_DOCKER_HOST: tcp://socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./data:/data
     read_only: true
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    depends_on:
+      - socket-proxy
 ```
+
+## Local development
+
+Backend (Go):
+
+```bash
+go run ./cmd/healthmon
+```
+
+Frontend (Vite + hot reload):
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Then open `http://localhost:5173` for the UI (Vite dev server) while the backend runs on `http://localhost:8080`.
 
 ## REST API
 

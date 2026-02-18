@@ -8,6 +8,7 @@ import (
 type Config struct {
 	DBPath               string
 	DockerSocket         string
+	DockerHost           string
 	HTTPAddr             string
 	TelegramToken        string
 	TelegramChatID       string
@@ -20,6 +21,7 @@ func Load() Config {
 	return Config{
 		DBPath:               getEnv("HM_DB_PATH", "./healthmon.db"),
 		DockerSocket:         getEnv("HM_DOCKER_SOCKET", "/var/run/docker.sock"),
+		DockerHost:           os.Getenv("HM_DOCKER_HOST"),
 		HTTPAddr:             getEnv("HM_HTTP_ADDR", ":8080"),
 		TelegramToken:        os.Getenv("HM_TG_TOKEN"),
 		TelegramChatID:       os.Getenv("HM_TG_CHAT_ID"),
