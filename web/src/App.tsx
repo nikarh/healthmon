@@ -64,7 +64,15 @@ const severityClass = (severity: string) => {
 
 const formatDate = (val: string) => {
   if (!val) return '—'
-  return new Date(val).toLocaleString()
+  return new Date(val).toLocaleString(undefined, {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 export default function App() {
@@ -73,10 +81,15 @@ export default function App() {
   const [events, setEvents] = useState<Record<string, EventItem[] | undefined>>({})
   const [pages, setPages] = useState<Record<string, PageState | undefined>>({})
   const [flash, setFlash] = useState<Record<string, boolean | undefined>>({})
+  const [query, setQuery] = useState('')
 
   const sortedContainers = useMemo(() => {
-    return [...containers].sort((a, b) => a.name.localeCompare(b.name))
-  }, [containers])
+    const normalized = query.trim().toLowerCase()
+    const filtered = normalized
+      ? containers.filter((item) => item.name.toLowerCase().includes(normalized))
+      : containers
+    return [...filtered].sort((a, b) => a.name.localeCompare(b.name))
+  }, [containers, query])
 
   const loadContainers = useCallback(async () => {
     const res = await fetch('/api/containers')
@@ -198,6 +211,28 @@ export default function App() {
       </header>
 
       <section className="container-list">
+        <div className="search-row">
+          <input
+            className="search-input"
+            type="search"
+            placeholder="Search containers"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+            }}
+          />
+          {query && (
+            <button
+              className="clear-search"
+              type="button"
+              onClick={() => {
+                setQuery('')
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
         {sortedContainers.length === 0 && <div className="empty">No containers found yet.</div>}
         {sortedContainers.map((container) => (
           <ContainerRow
@@ -301,8 +336,14 @@ function ContainerRow({
           <div className="details-grid">
             <div>
               <h3>Runtime</h3>
-              <p>User: {container.user}</p>
-              <p>Read-only: {container.read_only ? 'yes' : 'no'}</p>
+              <p className={container.user === '0:0' ? 'warn-text' : undefined}>
+                User: {container.user}
+                {container.user === '0:0' && <span className="warn-badge">!</span>}
+              </p>
+              <p className={!container.read_only ? 'warn-text' : undefined}>
+                Read-only: {container.read_only ? 'yes' : 'no'}
+                {!container.read_only && <span className="warn-badge">!</span>}
+              </p>
               <p>
                 Image ID: <span className="truncate-id">{container.image_id}</span>
               </p>
