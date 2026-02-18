@@ -39,6 +39,7 @@ docker run --rm \
   -e HM_TG_TOKEN=YOUR_TOKEN \
   -e HM_TG_CHAT_ID=YOUR_CHAT_ID \
   -e HM_DOCKER_HOST=tcp://socket-proxy:2375 \
+  -e TZ=Etc/UTC \
   -v $(pwd)/data:/data \
   --read-only \
   --cap-drop ALL \
@@ -70,6 +71,7 @@ services:
       HM_TG_TOKEN: YOUR_TOKEN
       HM_TG_CHAT_ID: YOUR_CHAT_ID
       HM_DOCKER_HOST: tcp://socket-proxy:2375
+      TZ: Etc/UTC
     user: "65534:65534"
     volumes:
       - ./data:/data
