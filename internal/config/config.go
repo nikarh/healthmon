@@ -15,7 +15,6 @@ type Config struct {
 	TelegramChatID       string
 	RestartWindowSeconds int
 	RestartThreshold     int
-	EventCacheLimit      int
 }
 
 func Load() Config {
@@ -28,7 +27,6 @@ func Load() Config {
 		TelegramChatID:       os.Getenv("HM_TG_CHAT_ID"),
 		RestartWindowSeconds: getEnvInt("HM_RESTART_WINDOW_SECONDS", 300),
 		RestartThreshold:     getEnvInt("HM_RESTART_THRESHOLD", 3),
-		EventCacheLimit:      getEnvInt("HM_EVENT_CACHE_LIMIT", 5000),
 	}
 }
 

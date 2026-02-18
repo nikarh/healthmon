@@ -41,7 +41,7 @@ func main() {
 		log.Fatalf("migrate db: %v", err)
 	}
 
-	st := store.New(database.SQL, cfg.EventCacheLimit)
+	st := store.New(database.SQL)
 	if err := st.Load(ctx); err != nil {
 		log.Fatalf("load store: %v", err)
 	}

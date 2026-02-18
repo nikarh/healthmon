@@ -26,7 +26,6 @@ Healthmon watches Docker containers via the Docker socket, detects restart loops
 | `HM_TG_CHAT_ID` | (empty) | Telegram chat ID (required if enabled) |
 | `HM_RESTART_WINDOW_SECONDS` | `300` | Restart loop window |
 | `HM_RESTART_THRESHOLD` | `3` | Restart loop threshold |
-| `HM_EVENT_CACHE_LIMIT` | `5000` | Event cache limit |
 
 ## Run with Docker
 

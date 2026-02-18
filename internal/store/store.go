@@ -10,17 +10,15 @@ import (
 )
 
 type Store struct {
-	db              *sql.DB
-	mu              sync.RWMutex
-	containers      map[string]*Container
-	eventCacheLimit int
+	db         *sql.DB
+	mu         sync.RWMutex
+	containers map[string]*Container
 }
 
-func New(db *sql.DB, eventCacheLimit int) *Store {
+func New(db *sql.DB) *Store {
 	return &Store{
-		db:              db,
-		containers:      make(map[string]*Container),
-		eventCacheLimit: eventCacheLimit,
+		db:         db,
+		containers: make(map[string]*Container),
 	}
 }
 
