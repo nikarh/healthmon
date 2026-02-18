@@ -46,14 +46,6 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Install git-cliff
-        run: |
-          if ! command -v cargo >/dev/null 2>&1; then
-            curl https://sh.rustup.rs -sSf | sh -s -- -y
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          fi
-          cargo install git-cliff
-
       - name: Set up Git
         run: |
           git config user.name "github-actions"
@@ -79,8 +71,15 @@ jobs:
           git commit -m "chore(release): v$next"
 
       - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .gitcliff.toml
+          args: --tag v${{ steps.version.outputs.version }} --unreleased
+
+      - name: Update changelog file
         run: |
-          git-cliff -o CHANGELOG.md
+          printf "%s\n" "${{ steps.changelog.outputs.content }}" > CHANGELOG.md
           git add CHANGELOG.md
           git commit -m "chore(release): update changelog"
 
