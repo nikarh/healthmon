@@ -9,12 +9,12 @@ if [ -n "$files" ]; then
   exit 1
 fi
 
+(cd "$ROOT_DIR/web" && npm run lint)
+(cd "$ROOT_DIR/web" && npm run format:check)
+(cd "$ROOT_DIR/web" && npm run build)
+
 go vet ./...
 
 go build ./cmd/healthmon
 
 go build -tags dev ./cmd/healthmon
-
-(cd "$ROOT_DIR/web" && npm run lint)
-(cd "$ROOT_DIR/web" && npm run format:check)
-(cd "$ROOT_DIR/web" && npm run build)
