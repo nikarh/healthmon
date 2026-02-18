@@ -247,6 +247,19 @@ func (s *Store) ContainerNames() []string {
 	return names
 }
 
+func (s *Store) DeleteContainer(ctx context.Context, name string) error {
+	if name == "" {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM containers WHERE name = ?`, name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	delete(s.containers, name)
+	s.mu.Unlock()
+	return nil
+}
+
 func nullStr(val string) interface{} {
 	if val == "" {
 		return nil
