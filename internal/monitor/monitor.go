@@ -153,6 +153,7 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 	}
 
 	_ = m.store.UpsertContainer(ctx, newInfo)
+	m.emitInfo(ctx, name, id, "created", "Container created", "", "", "", "", "create")
 }
 
 func (m *Monitor) handleStart(ctx context.Context, name, id string) {
@@ -169,6 +170,7 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 		info.FirstSeenAt = time.Now().UTC()
 	}
 	_ = m.store.UpsertContainer(ctx, info)
+	m.emitInfo(ctx, name, id, "started", "Container started", "", "", "", "", "start")
 }
 
 func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
