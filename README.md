@@ -19,11 +19,11 @@ Healthmon watches Docker containers via the Docker socket, detects restart loops
 | Env var | Default | Description |
 | --- | --- | --- |
 | `HM_DB_PATH` | `./healthmon.db` | SQLite DB path |
-| `HM_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket path (used if `HM_DOCKER_HOST` is empty) |
-| `HM_DOCKER_HOST` | (empty) | Docker host URL (e.g. `tcp://socket-proxy:2375`) |
+| `HM_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker host URL (e.g. `unix:///var/run/docker.sock` or `tcp://socket-proxy:2375`) |
 | `HM_HTTP_ADDR` | `:8080` | HTTP bind address |
-| `HM_TG_TOKEN` | (empty) | Telegram bot token |
-| `HM_TG_CHAT_ID` | (empty) | Telegram chat ID |
+| `HM_TG_ENABLED` | `false` | Enable Telegram alerts |
+| `HM_TG_TOKEN` | (empty) | Telegram bot token (required if enabled) |
+| `HM_TG_CHAT_ID` | (empty) | Telegram chat ID (required if enabled) |
 | `HM_RESTART_WINDOW_SECONDS` | `300` | Restart loop window |
 | `HM_RESTART_THRESHOLD` | `3` | Restart loop threshold |
 | `HM_EVENT_CACHE_LIMIT` | `5000` | Event cache limit |
@@ -36,6 +36,7 @@ Recommended: use a Docker socket proxy like https://github.com/11notes/docker-so
 docker run --rm \
   -p 8080:8080 \
   -e HM_DB_PATH=/data/healthmon.db \
+  -e HM_TG_ENABLED=true \
   -e HM_TG_TOKEN=YOUR_TOKEN \
   -e HM_TG_CHAT_ID=YOUR_CHAT_ID \
   -e HM_DOCKER_HOST=tcp://socket-proxy:2375 \
@@ -66,9 +67,11 @@ services:
       - "8080:8080"
     environment:
       HM_DB_PATH: /data/healthmon.db
+      HM_TG_ENABLED: true
       HM_TG_TOKEN: YOUR_TOKEN
       HM_TG_CHAT_ID: YOUR_CHAT_ID
       HM_DOCKER_HOST: tcp://socket-proxy:2375
+    user: "65534:65534"
     volumes:
       - ./data:/data
     read_only: true

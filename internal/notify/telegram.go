@@ -20,8 +20,8 @@ type telegramPayload struct {
 	Text   string `json:"text"`
 }
 
-func NewTelegram(token, chatID string) *Telegram {
-	if token == "" || chatID == "" {
+func NewTelegram(enabled bool, token, chatID string) *Telegram {
+	if !enabled || token == "" || chatID == "" {
 		return nil
 	}
 	return &Telegram{

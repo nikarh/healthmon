@@ -25,6 +25,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if cfg.TelegramEnabled {
+		if cfg.TelegramToken == "" || cfg.TelegramChatID == "" {
+			log.Fatalf("telegram enabled but HM_TG_TOKEN or HM_TG_CHAT_ID missing")
+		}
+	}
+
 	database, err := db.Open(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("open db: %v", err)

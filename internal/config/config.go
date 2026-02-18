@@ -3,13 +3,14 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
 	DBPath               string
-	DockerSocket         string
 	DockerHost           string
 	HTTPAddr             string
+	TelegramEnabled      bool
 	TelegramToken        string
 	TelegramChatID       string
 	RestartWindowSeconds int
@@ -20,9 +21,9 @@ type Config struct {
 func Load() Config {
 	return Config{
 		DBPath:               getEnv("HM_DB_PATH", "./healthmon.db"),
-		DockerSocket:         getEnv("HM_DOCKER_SOCKET", "/var/run/docker.sock"),
-		DockerHost:           os.Getenv("HM_DOCKER_HOST"),
+		DockerHost:           getEnv("HM_DOCKER_HOST", "unix:///var/run/docker.sock"),
 		HTTPAddr:             getEnv("HM_HTTP_ADDR", ":8080"),
+		TelegramEnabled:      getEnvBool("HM_TG_ENABLED", false),
 		TelegramToken:        os.Getenv("HM_TG_TOKEN"),
 		TelegramChatID:       os.Getenv("HM_TG_CHAT_ID"),
 		RestartWindowSeconds: getEnvInt("HM_RESTART_WINDOW_SECONDS", 300),
@@ -49,4 +50,19 @@ func getEnvInt(key string, def int) int {
 		return def
 	}
 	return i
+}
+
+func getEnvBool(key string, def bool) bool {
+	val := os.Getenv(key)
+	if val == "" {
+		return def
+	}
+	switch strings.ToLower(val) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return def
+	}
 }

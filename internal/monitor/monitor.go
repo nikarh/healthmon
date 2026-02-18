@@ -34,23 +34,14 @@ func New(cfg config.Config, store *store.Store, server *api.Server) *Monitor {
 		cfg:        cfg,
 		store:      store,
 		server:     server,
-		telegram:   notify.NewTelegram(cfg.TelegramToken, cfg.TelegramChatID),
+		telegram:   notify.NewTelegram(cfg.TelegramEnabled, cfg.TelegramToken, cfg.TelegramChatID),
 		restarts:   newRestartTracker(cfg.RestartWindowSeconds, cfg.RestartThreshold),
 		capDefault: defaultCaps(),
 	}
 }
 
 func (m *Monitor) Start(ctx context.Context) error {
-	var opts []client.Opt
-	if m.cfg.DockerHost != "" {
-		opts = append(opts, client.WithHost(m.cfg.DockerHost))
-	} else {
-		host := fmt.Sprintf("unix://%s", m.cfg.DockerSocket)
-		opts = append(opts, client.WithHost(host))
-	}
-	opts = append(opts, client.WithAPIVersionNegotiation())
-
-	cli, err := client.NewClientWithOpts(opts...)
+	cli, err := client.NewClientWithOpts(client.WithHost(m.cfg.DockerHost), client.WithAPIVersionNegotiation())
 	if err != nil {
 		return err
 	}
