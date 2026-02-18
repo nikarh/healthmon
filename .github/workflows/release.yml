@@ -1,0 +1,108 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump (patch, minor, major)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install UI deps
+        working-directory: web
+        run: npm ci
+
+      - name: Build UI
+        working-directory: web
+        run: npm run build
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+
+      - name: Bump version
+        id: version
+        run: |
+          current=$(cat VERSION)
+          bump=${{ github.event.inputs.bump }}
+          IFS='.' read -r major minor patch <<< "$current"
+          if [ "$bump" = "major" ]; then
+            major=$((major+1)); minor=0; patch=0
+          elif [ "$bump" = "minor" ]; then
+            minor=$((minor+1)); patch=0
+          else
+            patch=$((patch+1))
+          fi
+          next="$major.$minor.$patch"
+          echo "$next" > VERSION
+          echo "version=$next" >> $GITHUB_OUTPUT
+          git add VERSION
+          git commit -m "chore(release): v$next"
+
+      - name: Generate changelog
+        run: |
+          docker run --rm -v "$PWD":/work -w /work ghcr.io/orhun/git-cliff:latest -o CHANGELOG.md
+          git add CHANGELOG.md
+          git commit -m "chore(release): update changelog"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        run: |
+          image=ghcr.io/${{ github.repository }}/healthmon:${{ steps.version.outputs.version }}
+          latest=ghcr.io/${{ github.repository }}/healthmon:latest
+          docker build -t "$image" -t "$latest" .
+          docker push "$image"
+          docker push "$latest"
+
+      - name: Create Git tag
+        run: |
+          git tag v${{ steps.version.outputs.version }}
+
+      - name: Push changes
+        run: |
+          git push origin HEAD
+          git push origin --tags
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
