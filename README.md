@@ -89,7 +89,7 @@ services:
 Backend (Go):
 
 ```bash
-go run ./cmd/healthmon
+go run -tags dev ./cmd/healthmon
 ```
 
 Frontend (Vite + hot reload):
