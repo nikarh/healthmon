@@ -2,13 +2,10 @@
 
 
 ## CHORE
-- v0.1.3
+- v0.1.4
 
 
-## DOCS
-- fix GitHub and GHCR owner
-
-
-## CI
-- fix image tag path
+## FIXES
+- graceful shutdown on signal
+- serve embedded web assets
 
