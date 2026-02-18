@@ -1,3 +1,9 @@
 [tools]
-go = "latest"
+go = "1.26"
 node = "24.13.1"
+
+[tasks.dev]
+run = "bash scripts/dev.sh"
+
+[tasks.check]
+run = "bash scripts/check.sh"

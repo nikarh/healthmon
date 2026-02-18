@@ -102,6 +102,12 @@ npm run dev
 
 Then open `http://localhost:5173` for the UI (Vite dev server) while the backend runs on `http://localhost:8080`.
 
+One-command dev (hot reload front + back):
+
+```bash
+mise run dev
+```
+
 ## Static checks and formatting
 
 Backend:
@@ -117,6 +123,12 @@ Frontend:
 cd web
 npm run lint
 npm run format
+```
+
+One-command check:
+
+```bash
+mise run check
 ```
 
 ## REST API
