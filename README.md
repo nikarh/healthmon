@@ -102,6 +102,23 @@ npm run dev
 
 Then open `http://localhost:5173` for the UI (Vite dev server) while the backend runs on `http://localhost:8080`.
 
+## Static checks and formatting
+
+Backend:
+
+```bash
+gofmt -w .
+go vet ./...
+```
+
+Frontend:
+
+```bash
+cd web
+npm run lint
+npm run format
+```
+
 ## REST API
 
 - `GET /api/containers` returns all containers with current status and last event.

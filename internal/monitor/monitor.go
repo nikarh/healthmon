@@ -14,7 +14,7 @@ import (
 	"healthmon/internal/store"
 
 	"github.com/distribution/reference"
-	"github.com/moby/moby/api/types"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 )
@@ -53,14 +53,14 @@ func (m *Monitor) Start(ctx context.Context) error {
 
 	go m.watchHeals(ctx)
 
-	msgs, errs := cli.Events(ctx, events.ListOptions{})
+	stream := cli.Events(ctx, client.EventsListOptions{})
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-errs:
+		case err := <-stream.Err:
 			return err
-		case msg := <-msgs:
+		case msg := <-stream.Messages:
 			if msg.Type != "container" {
 				continue
 			}
@@ -70,21 +70,21 @@ func (m *Monitor) Start(ctx context.Context) error {
 }
 
 func (m *Monitor) syncExisting(ctx context.Context) error {
-	containers, err := m.docker.ContainerList(ctx, types.ContainerListOptions{All: true})
+	result, err := m.docker.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return err
 	}
 
-	for _, c := range containers {
+	for _, c := range result.Items {
 		if len(c.Names) == 0 {
 			continue
 		}
 		name := strings.TrimPrefix(c.Names[0], "/")
-		inspect, err := m.docker.ContainerInspect(ctx, c.ID)
+		inspect, err := m.docker.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			continue
 		}
-		info := m.inspectToContainer(inspect)
+		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.FirstSeenAt = existing.FirstSeenAt
@@ -105,35 +105,35 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 		return
 	}
 	name = strings.TrimPrefix(name, "/")
-	log.Printf("event: container=%s action=%s id=%s", name, msg.Action, msg.ID)
+	log.Printf("event: container=%s action=%s id=%s", name, msg.Action, msg.Actor.ID)
 
 	switch {
 	case msg.Action == "create":
-		m.handleCreate(ctx, name, msg.ID)
+		m.handleCreate(ctx, name, msg.Actor.ID)
 	case msg.Action == "start":
-		m.handleStart(ctx, name, msg.ID)
+		m.handleStart(ctx, name, msg.Actor.ID)
 	case msg.Action == "die":
-		m.handleRestartLike(ctx, name, msg.ID, "die")
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "die")
 	case msg.Action == "restart":
-		m.handleRestartLike(ctx, name, msg.ID, "restart")
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "restart")
 	case msg.Action == "kill":
-		m.handleRestartLike(ctx, name, msg.ID, "kill")
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "kill")
 	case msg.Action == "oom":
-		m.handleRestartLike(ctx, name, msg.ID, "oom")
-	case strings.HasPrefix(msg.Action, "health_status:"):
-		m.handleHealth(ctx, name, msg.ID, strings.TrimSpace(strings.TrimPrefix(msg.Action, "health_status:")))
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom")
+	case strings.HasPrefix(string(msg.Action), "health_status:"):
+		m.handleHealth(ctx, name, msg.Actor.ID, strings.TrimSpace(strings.TrimPrefix(string(msg.Action), "health_status:")))
 	case msg.Action == "destroy":
 		_ = m.store.DeleteContainer(ctx, name)
 	}
 }
 
 func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
-	inspect, err := m.docker.ContainerInspect(ctx, id)
+	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return
 	}
 
-	newInfo := m.inspectToContainer(inspect)
+	newInfo := m.inspectToContainer(inspect.Container)
 	newInfo.Name = name
 
 	existing, has := m.store.GetContainer(name)
@@ -156,11 +156,11 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 }
 
 func (m *Monitor) handleStart(ctx context.Context, name, id string) {
-	inspect, err := m.docker.ContainerInspect(ctx, id)
+	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return
 	}
-	info := m.inspectToContainer(inspect)
+	info := m.inspectToContainer(inspect.Container)
 	info.Name = name
 	if existing, ok := m.store.GetContainer(name); ok {
 		info.FirstSeenAt = existing.FirstSeenAt
@@ -191,9 +191,9 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 		m.emitAlert(ctx, name, id, "restart_loop", "Restart loop detected", "red")
 	}
 
-	inspect, err := m.docker.ContainerInspect(ctx, id)
+	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err == nil {
-		info := m.inspectToContainer(inspect)
+		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.FirstSeenAt = existing.FirstSeenAt
@@ -329,11 +329,20 @@ func (m *Monitor) sendTelegram(ctx context.Context, e store.Event) {
 	}
 }
 
-func (m *Monitor) inspectToContainer(inspect types.ContainerJSON) store.Container {
+func shouldAlert(eventType string) bool {
+	switch eventType {
+	case "restart_loop", "restart_healed", "image_changed", "recreated":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Container {
 	created := parseDockerTime(inspect.Created)
 	status := "unknown"
 	if inspect.State != nil {
-		status = inspect.State.Status
+		status = string(inspect.State.Status)
 		if inspect.State.OOMKilled {
 			status = "oom"
 		} else if inspect.State.Status == "exited" && inspect.State.ExitCode != 0 {

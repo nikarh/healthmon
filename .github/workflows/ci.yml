@@ -32,9 +32,24 @@ jobs:
         working-directory: web
         run: npm run lint
 
+      - name: Format check UI
+        working-directory: web
+        run: npm run format:check
+
       - name: Build UI
         working-directory: web
         run: npm run build
+
+      - name: Go format check
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Go vet
+        run: go vet ./...
 
       - name: Build backend
         run: go build ./cmd/healthmon

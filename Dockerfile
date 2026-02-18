@@ -4,6 +4,7 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+RUN mkdir -p /app/cmd/healthmon/web/dist
 RUN npm run build
 
 # Build backend
@@ -12,7 +13,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
-COPY --from=webbuild /app/web/dist ./web/dist
+COPY --from=webbuild /app/cmd/healthmon/web/dist ./cmd/healthmon/web/dist
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/healthmon ./cmd/healthmon
 
 # Final
