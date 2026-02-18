@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    "strict": true,
+    "strictNullChecks": true,
+    "noEmit": true
+  },
+  "include": ["src", "vite.config.ts", "types"]
+}
