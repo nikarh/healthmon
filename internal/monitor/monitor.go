@@ -264,18 +264,20 @@ func (m *Monitor) emitAlert(ctx context.Context, name, id, eventType, message, s
 }
 
 func (m *Monitor) emit(ctx context.Context, e store.Event) {
+	container, ok := m.store.GetContainer(e.Container)
+	if !ok {
+		return
+	}
+	e.ContainerPK = container.ID
 	id, err := m.store.AddEvent(ctx, e)
 	if err != nil {
 		return
 	}
 	e.ID = id
-	container, ok := m.store.GetContainer(e.Container)
-	if !ok {
-		return
-	}
 
 	update := api.EventUpdate{
 		Container: api.ContainerResponse{
+			ID:          container.ID,
 			Name:        container.Name,
 			ContainerID: container.ContainerID,
 			Image:       container.Image,
@@ -291,6 +293,7 @@ func (m *Monitor) emit(ctx context.Context, e store.Event) {
 		},
 		Event: api.EventResponse{
 			ID:          e.ID,
+			ContainerPK: container.ID,
 			Container:   e.Container,
 			ContainerID: e.ContainerID,
 			Type:        e.Type,

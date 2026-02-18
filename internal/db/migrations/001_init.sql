@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 
 CREATE TABLE IF NOT EXISTS containers (
-  name TEXT PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
   container_id TEXT NOT NULL,
   image TEXT NOT NULL,
   image_tag TEXT NOT NULL,
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS containers (
 
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  container_pk INTEGER NOT NULL,
   container_name TEXT NOT NULL,
   container_id TEXT NOT NULL,
   event_type TEXT NOT NULL,
@@ -35,4 +37,4 @@ CREATE TABLE IF NOT EXISTS events (
   details TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_container_ts ON events(container_name, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_events_container_ts ON events(container_pk, ts DESC);

@@ -115,6 +115,7 @@ func (s *Server) Broadcast(ctx context.Context, update EventUpdate) {
 }
 
 type ContainerResponse struct {
+	ID          int64          `json:"id"`
 	Name        string         `json:"name"`
 	ContainerID string         `json:"container_id"`
 	Image       string         `json:"image"`
@@ -131,6 +132,7 @@ type ContainerResponse struct {
 
 type EventResponse struct {
 	ID          int64  `json:"id"`
+	ContainerPK int64  `json:"container_pk"`
 	Container   string `json:"container"`
 	ContainerID string `json:"container_id"`
 	Type        string `json:"type"`
@@ -152,6 +154,7 @@ type EventUpdate struct {
 
 func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerResponse {
 	return ContainerResponse{
+		ID:          c.ID,
 		Name:        c.Name,
 		ContainerID: c.ContainerID,
 		Image:       c.Image,
@@ -170,6 +173,7 @@ func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerR
 func toEventResponse(e store.Event) *EventResponse {
 	return &EventResponse{
 		ID:          e.ID,
+		ContainerPK: e.ContainerPK,
 		Container:   e.Container,
 		ContainerID: e.ContainerID,
 		Type:        e.Type,

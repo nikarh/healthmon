@@ -3,16 +3,17 @@ module healthmon
 go 1.24.0
 
 require (
+	github.com/distribution/reference v0.6.0
 	github.com/moby/moby/api v1.53.0
 	github.com/moby/moby/client v0.2.2
 	modernc.org/sqlite v1.46.1
+	nhooyr.io/websocket v1.8.17
 )
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
