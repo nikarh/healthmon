@@ -8,7 +8,7 @@ RUN mkdir -p /app/cmd/healthmon/web/dist
 RUN npm run build
 
 # Build backend
-FROM golang:1.25-bullseye AS gobuild
+FROM golang:1.26-bullseye AS gobuild
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
