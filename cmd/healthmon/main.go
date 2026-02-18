@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -55,6 +54,11 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	serverErrCh := make(chan error, 1)
+	go func() {
+		serverErrCh <- httpServer.ListenAndServe()
+	}()
+
 	go func() {
 		if err := mon.Start(ctx); err != nil && err != context.Canceled {
 			log.Printf("monitor stopped: %v", err)
@@ -63,13 +67,25 @@ func main() {
 	}()
 
 	log.Printf("healthmon starting on %s", cfg.HTTPAddr)
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("http server: %v", err)
+	var serverErr error
+	select {
+	case <-ctx.Done():
+	case serverErr = <-serverErrCh:
+		if serverErr != nil && serverErr != http.ErrServerClosed {
+			log.Printf("http server stopped: %v", serverErr)
+		}
+		stop()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = httpServer.Shutdown(shutdownCtx)
-	<-ctx.Done()
-	os.Exit(0)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("http shutdown: %v", err)
+	}
+	if serverErr == nil {
+		serverErr = <-serverErrCh
+	}
+	if serverErr != nil && serverErr != http.ErrServerClosed {
+		log.Printf("http server stopped: %v", serverErr)
+	}
 }
