@@ -1,6 +1,7 @@
 # Go
 /bin/
 /coverage.out
+/cmd/healthmon/web/dist/
 
 # SQLite
 *.db

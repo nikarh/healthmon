@@ -108,6 +108,8 @@ One-command dev (hot reload front + back):
 mise run dev
 ```
 
+Production build note: the backend embeds the UI from `cmd/healthmon/web/dist`. Run `npm run build` in `web/` before `go build ./cmd/healthmon` (non-dev builds).
+
 ## Static checks and formatting
 
 Backend:
