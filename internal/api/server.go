@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,10 +16,15 @@ import (
 type Server struct {
 	store       *store.Store
 	broadcaster *Broadcaster
+	staticFS    http.FileSystem
 }
 
 func NewServer(store *store.Store, broadcaster *Broadcaster) *Server {
 	return &Server{store: store, broadcaster: broadcaster}
+}
+
+func (s *Server) WithStatic(fs http.FileSystem) {
+	s.staticFS = fs
 }
 
 func (s *Server) Routes() http.Handler {
@@ -26,7 +32,52 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/containers", s.handleContainers)
 	mux.HandleFunc("/api/containers/", s.handleContainerEvents)
 	mux.HandleFunc("/api/events/stream", s.handleStream)
+
+	if s.staticFS != nil {
+		mux.Handle("/", http.HandlerFunc(s.handleSPA))
+	}
+
 	return mux
+}
+
+func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	if path == "/" {
+		r.URL.Path = "/index.html"
+	} else {
+		if path != "/" && strings.HasSuffix(path, "/") {
+			r.URL.Path = strings.TrimSuffix(path, "/")
+		}
+	}
+
+	file, err := s.staticFS.Open(r.URL.Path)
+	if err != nil {
+		index, err := s.staticFS.Open("/index.html")
+		if err != nil {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		defer index.Close()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.Copy(w, index)
+		return
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err == nil && info.IsDir() {
+		index, err := s.staticFS.Open("/index.html")
+		if err != nil {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		defer index.Close()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.Copy(w, index)
+		return
+	}
+
+	http.ServeContent(w, r, r.URL.Path, info.ModTime(), file)
 }
 
 func (s *Server) handleContainers(w http.ResponseWriter, r *http.Request) {

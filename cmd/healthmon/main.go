@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +16,9 @@ import (
 	"healthmon/internal/monitor"
 	"healthmon/internal/store"
 )
+
+//go:embed web/dist/* web/dist/assets/*
+var webDist embed.FS
 
 func main() {
 	cfg := config.Load()
@@ -38,6 +42,7 @@ func main() {
 
 	broadcaster := api.NewBroadcaster()
 	server := api.NewServer(st, broadcaster)
+	server.WithStatic(http.FS(webDist))
 	mon := monitor.New(cfg, st, server)
 
 	httpServer := &http.Server{
