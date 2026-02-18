@@ -188,10 +188,9 @@ export default function App() {
   return (
     <div className="app">
       <header className="hero">
-        <div>
-          <p className="tag">healthmon</p>
+        <div className="title-row">
+          <span className="tag">healthmon</span>
           <h1>Container Health Monitor</h1>
-          <p className="subtitle">Live status, restarts, and image changes in one view.</p>
         </div>
         <button className="refresh" type="button" onClick={handleRefresh}>
           Refresh
@@ -304,8 +303,12 @@ function ContainerRow({
               <h3>Runtime</h3>
               <p>User: {container.user}</p>
               <p>Read-only: {container.read_only ? 'yes' : 'no'}</p>
-              <p>Image ID: {container.image_id}</p>
-              <p>Container ID: {container.container_id}</p>
+              <p>
+                Image ID: <span className="truncate-id">{container.image_id}</span>
+              </p>
+              <p>
+                Container ID: <span className="truncate-id">{container.container_id}</span>
+              </p>
             </div>
             <div>
               <h3>Capabilities</h3>

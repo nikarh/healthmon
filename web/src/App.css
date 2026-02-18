@@ -62,40 +62,43 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px 20px 24px;
+  gap: 14px;
+  padding: 12px 16px 20px;
 }
 
 .hero {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 12px 18px;
+  gap: 12px;
+  padding: 10px 14px;
   background: var(--bg-header);
   color: var(--text-invert);
-  border-radius: 14px;
-  box-shadow: 0 12px 28px var(--shadow);
+  border-radius: 12px;
+  box-shadow: 0 8px 18px var(--shadow);
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .tag {
   font-family: 'Spline Sans Mono', monospace;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 11px;
-  margin: 0 0 6px;
+  font-size: 10px;
+  margin: 0;
   color: var(--accent);
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(168, 241, 199, 0.12);
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(18px, 2.6vw, 26px);
-}
-
-.subtitle {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--text-invert-muted);
+  font-size: 18px;
 }
 
 .refresh {
@@ -103,7 +106,7 @@ body {
   background: var(--accent);
   color: #0d1b13;
   font-weight: 600;
-  padding: 10px 16px;
+  padding: 8px 14px;
   border-radius: 999px;
   cursor: pointer;
   transition:
@@ -119,7 +122,7 @@ body {
 .container-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .container-card {
@@ -145,9 +148,9 @@ body {
 .container-main {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 16px;
+  gap: 14px;
   align-items: center;
-  padding: 16px 18px;
+  padding: 14px 16px;
   background: transparent;
   width: 100%;
   border: none;
@@ -189,18 +192,18 @@ body {
 .name-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .name {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
 }
 
 .status-pill {
   padding: 4px 8px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   background: var(--bg-pill);
@@ -210,7 +213,7 @@ body {
 .meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   font-size: 12px;
   color: var(--text-muted);
 }
@@ -252,7 +255,7 @@ body {
 
 .container-details {
   border-top: 1px solid var(--border-subtle);
-  padding: 18px;
+  padding: 16px;
   background: var(--bg-muted);
   animation: fadeIn 0.3s ease;
 }
@@ -260,13 +263,13 @@ body {
 .details-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .details-grid h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -277,6 +280,15 @@ body {
   color: var(--text-muted);
 }
 
+.truncate-id {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
 .caps {
   font-family: 'Spline Sans Mono', monospace;
   font-size: 12px;
@@ -285,7 +297,7 @@ body {
 .events {
   background: var(--bg-card);
   border-radius: 14px;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--border);
 }
 
@@ -379,11 +391,6 @@ body {
 }
 
 @media (max-width: 900px) {
-  .hero {
-    flex-direction: row;
-    align-items: center;
-  }
-
   .container-main {
     grid-template-columns: auto 1fr;
   }
@@ -395,19 +402,27 @@ body {
 
 @media (max-width: 600px) {
   .app {
-    padding: 10px 12px 16px;
+    padding: 8px 10px 14px;
   }
 
   .hero {
-    padding: 10px 14px;
-    border-radius: 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
   }
 
   .container-main {
-    padding: 14px 14px;
+    padding: 12px 12px;
   }
 
   .meta {
     flex-direction: column;
+  }
+
+  .truncate-id {
+    max-width: 160px;
+  }
+
+  .tag {
+    display: none;
   }
 }
