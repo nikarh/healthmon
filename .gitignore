@@ -1,0 +1,17 @@
+# Go
+/bin/
+/coverage.out
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+
+# Node
+/node_modules/
+/web/dist/
+/web/.vite/
+
+# Misc
+.env
+.DS_Store
