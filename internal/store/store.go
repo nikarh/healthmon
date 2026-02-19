@@ -192,6 +192,11 @@ func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 	if c.Role == "" {
 		c.Role = "service"
 	}
+	if existing, ok := s.containers[c.Name]; ok {
+		log.Printf("store: upsert name=%s id=%d container_id=%s existing_id=%d existing_container_id=%s", c.Name, c.ID, c.ContainerID, existing.ID, existing.ContainerID)
+	} else {
+		log.Printf("store: upsert name=%s id=%d container_id=%s existing_id=none", c.Name, c.ID, c.ContainerID)
+	}
 	if c.LastEventID == 0 {
 		if existing, ok := s.containers[c.Name]; ok && existing.LastEventID > 0 {
 			c.LastEventID = existing.LastEventID
@@ -214,7 +219,8 @@ func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 		present = 1
 	}
 
-	res, err := s.db.ExecContext(ctx, `
+	var id int64
+	err = s.db.QueryRowContext(ctx, `
 INSERT INTO containers (name, container_id, image, image_tag, image_id, created_at_container, first_seen_at, status, role, caps, read_only, user, last_event_id, updated_at, present)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET
@@ -231,24 +237,12 @@ ON CONFLICT(name) DO UPDATE SET
   last_event_id=excluded.last_event_id,
   updated_at=excluded.updated_at,
   present=excluded.present
-`, c.Name, c.ContainerID, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.FirstSeenAt), c.Status, c.Role, string(capsJSON), readOnly, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present)
+RETURNING id
+`, c.Name, c.ContainerID, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.FirstSeenAt), c.Status, c.Role, string(capsJSON), readOnly, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present).Scan(&id)
 	if err != nil {
 		return err
 	}
-	id := c.ID
-	if id == 0 {
-		if lastID, err := res.LastInsertId(); err == nil && lastID > 0 {
-			id = lastID
-		}
-	}
-	if id == 0 {
-		if row := s.db.QueryRowContext(ctx, `SELECT id FROM containers WHERE name = ?`, c.Name); row != nil {
-			var fetched int64
-			if err := row.Scan(&fetched); err == nil {
-				id = fetched
-			}
-		}
-	}
+	log.Printf("store: upsert name=%s returning_id=%d", c.Name, id)
 	copy := c
 	copy.ID = id
 	s.containers[c.Name] = &copy
@@ -256,6 +250,7 @@ ON CONFLICT(name) DO UPDATE SET
 }
 
 func (s *Store) AddEvent(ctx context.Context, e Event) (int64, error) {
+	log.Printf("store: add event type=%s name=%s id=%s pk=%d", e.Type, e.Container, e.ContainerID, e.ContainerPK)
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO events (container_pk, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -270,6 +265,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	e.ID = id
 	s.mu.Lock()
 	if c, ok := s.containers[e.Container]; ok {
+		if c.ID != e.ContainerPK {
+			log.Printf("store: add event mismatch name=%s map_id=%d event_pk=%d container_id=%s", e.Container, c.ID, e.ContainerPK, e.ContainerID)
+		}
 		c.LastEventID = id
 		c.UpdatedAt = e.Timestamp
 	}
