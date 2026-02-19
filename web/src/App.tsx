@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AutoSizer } from 'react-virtualized-auto-sizer'
-import { FixedSizeList } from 'react-window'
+import { List } from 'react-window'
 import logoUrl from './assets/logo.svg'
 import './App.css'
 
@@ -554,21 +554,24 @@ interface AllEventsProps {
 
 function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsProps) {
   const handleItemsRendered = useCallback(
-    ({ visibleStopIndex }: { visibleStopIndex: number }) => {
+    ({ stopIndex }: { stopIndex: number }) => {
       if (page.loading || page.done || error) return
-      if (visibleStopIndex >= events.length - 4) {
+      if (stopIndex >= events.length - 4) {
         void onLoadMore()
       }
     },
     [events.length, onLoadMore, page.done, page.loading, error],
   )
 
-  const rowRenderer = useCallback(
-    ({ index, style }: { index: number; style: CSSProperties }) => {
-      const event = events[index]
+  const rowComponent = useCallback(
+    ({ index, style, events: rows }: { index: number; style: CSSProperties; events: EventItem[] }) => {
+      const event = rows[index]
       if (!event) return null
       return (
-        <div style={style} className="event-row feed-row">
+        <div
+          style={style}
+          className={`event-row feed-row ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'}`}
+        >
           <div className={`event-dot ${severityClass(event.severity)}`} />
           <div className="event-body">
             <div className="event-top">
@@ -592,7 +595,7 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
         </div>
       )
     },
-    [events],
+    [],
   )
 
   return (
@@ -605,15 +608,16 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
         {events.length > 0 && (
           <AutoSizer>
             {({ height, width }) => (
-              <FixedSizeList
+              <List
                 height={height}
                 width={width}
-                itemCount={events.length}
-                itemSize={136}
-                onItemsRendered={handleItemsRendered}
-              >
-                {rowRenderer}
-              </FixedSizeList>
+                rowCount={events.length}
+                rowHeight={136}
+                rowComponent={rowComponent}
+                rowProps={{ events }}
+                onRowsRendered={({ stopIndex }) => handleItemsRendered({ stopIndex })}
+                overscanCount={4}
+              />
             )}
           </AutoSizer>
         )}

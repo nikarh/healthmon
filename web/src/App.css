@@ -458,8 +458,12 @@ body {
   border-bottom: none;
 }
 
-.feed-row:nth-child(even) {
+.feed-row-even {
   background: linear-gradient(90deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0));
+}
+
+.feed-row-odd {
+  background: transparent;
 }
 
 .event-body {
