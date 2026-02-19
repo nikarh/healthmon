@@ -59,7 +59,8 @@ func (s *Store) Load(ctx context.Context) error {
 		if c.Role == "" {
 			c.Role = "service"
 		}
-		s.containers[c.Name] = &c
+		container := c
+		s.containers[container.Name] = &container
 	}
 	return rows.Err()
 }
