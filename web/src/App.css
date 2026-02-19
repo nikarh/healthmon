@@ -458,6 +458,10 @@ body {
   border-bottom: none;
 }
 
+.feed-row:nth-child(even) {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0));
+}
+
 .event-body {
   flex: 1;
   display: flex;

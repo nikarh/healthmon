@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import AutoSizer from 'react-virtualized-auto-sizer'
+import { AutoSizer } from 'react-virtualized-auto-sizer'
 import { FixedSizeList } from 'react-window'
 import logoUrl from './assets/logo.svg'
 import './App.css'
