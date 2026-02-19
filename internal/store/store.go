@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"log"
 	"sort"
 	"sync"
 	"time"
@@ -145,7 +144,6 @@ func (s *Store) GetContainerByContainerID(ctx context.Context, containerID strin
 		if c.ContainerID == containerID {
 			copy := *c
 			s.mu.RUnlock()
-			log.Printf("store: by id=%s -> name=%s pk=%d", containerID, copy.Name, copy.ID)
 			return copy, true, nil
 		}
 	}
@@ -184,7 +182,6 @@ func (s *Store) GetContainerByContainerID(ctx context.Context, containerID strin
 	s.mu.Lock()
 	s.containers[c.Name] = &c
 	s.mu.Unlock()
-	log.Printf("store: by id=%s -> name=%s pk=%d (db)", containerID, c.Name, c.ID)
 	return c, true, nil
 }
 
