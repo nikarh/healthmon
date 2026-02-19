@@ -12,11 +12,13 @@ type Container struct {
 	CreatedAt   time.Time
 	FirstSeenAt time.Time
 	Status      string
+	Role        string
 	Caps        []string
 	ReadOnly    bool
 	User        string
 	LastEventID int64
 	UpdatedAt   time.Time
+	Present     bool
 }
 
 type Event struct {

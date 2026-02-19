@@ -75,11 +75,13 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 		return err
 	}
 
+	presentNames := make(map[string]struct{}, len(result.Items))
 	for _, c := range result.Items {
 		if len(c.Names) == 0 {
 			continue
 		}
 		name := strings.TrimPrefix(c.Names[0], "/")
+		presentNames[name] = struct{}{}
 		inspect, err := m.docker.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			continue
@@ -95,6 +97,9 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 		if err := m.store.UpsertContainer(ctx, info); err != nil {
 			return err
 		}
+	}
+	if err := m.store.MarkAbsentExcept(ctx, presentNames); err != nil {
+		return err
 	}
 	return nil
 }
@@ -122,8 +127,10 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom")
 	case strings.HasPrefix(string(msg.Action), "health_status:"):
 		m.handleHealth(ctx, name, msg.Actor.ID, strings.TrimSpace(strings.TrimPrefix(string(msg.Action), "health_status:")))
-	case msg.Action == "destroy":
-		_ = m.store.DeleteContainer(ctx, name)
+	case msg.Action == "rename":
+		m.handleRename(ctx, msg, name)
+	case msg.Action == "destroy" || msg.Action == "remove" || msg.Action == "rm":
+		_ = m.store.SetContainerPresent(ctx, name, false)
 	}
 }
 
@@ -144,6 +151,7 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 	}
 
 	if has && existing.ContainerID != id {
+		m.restarts.reset(name)
 		imageChanged := existing.ImageID != newInfo.ImageID || existing.ImageTag != newInfo.ImageTag
 		if imageChanged {
 			m.emitInfo(ctx, name, id, "image_changed", fmt.Sprintf("Image changed %s -> %s", existing.Image, newInfo.Image), existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate")
@@ -171,6 +179,35 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 	}
 	_ = m.store.UpsertContainer(ctx, info)
 	m.emitInfo(ctx, name, id, "started", "Container started", "", "", "", "", "start")
+}
+
+func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName string) {
+	oldName := msg.Actor.Attributes["oldName"]
+	if oldName == "" {
+		oldName = msg.Actor.Attributes["old_name"]
+	}
+	if oldName == "" || newName == "" {
+		return
+	}
+	oldName = strings.TrimPrefix(oldName, "/")
+	newName = strings.TrimPrefix(newName, "/")
+
+	inspect, err := m.docker.ContainerInspect(ctx, msg.Actor.ID, client.ContainerInspectOptions{})
+	if err != nil {
+		return
+	}
+	info := m.inspectToContainer(inspect.Container)
+	info.Name = newName
+	if existing, ok := m.store.GetContainer(oldName); ok {
+		info.FirstSeenAt = existing.FirstSeenAt
+		info.LastEventID = existing.LastEventID
+	}
+	if info.FirstSeenAt.IsZero() {
+		info.FirstSeenAt = time.Now().UTC()
+	}
+	m.restarts.reset(oldName)
+	m.restarts.reset(newName)
+	_ = m.store.RenameContainer(ctx, oldName, newName, info)
 }
 
 func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
@@ -291,6 +328,7 @@ func (m *Monitor) emit(ctx context.Context, e store.Event) {
 			CreatedAt:   container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			FirstSeenAt: container.FirstSeenAt.UTC().Format("2006-01-02T15:04:05Z"),
 			Status:      container.Status,
+			Role:        container.Role,
 			Caps:        container.Caps,
 			ReadOnly:    container.ReadOnly,
 			User:        container.User,
@@ -359,6 +397,7 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 	if user == "" {
 		user = "0:0"
 	}
+	role := resolveRole(inspect.Config.Labels)
 
 	return store.Container{
 		ContainerID: inspect.ID,
@@ -367,10 +406,12 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		ImageID:     inspect.Image,
 		CreatedAt:   created,
 		Status:      status,
+		Role:        role,
 		Caps:        caps,
 		ReadOnly:    inspect.HostConfig.ReadonlyRootfs,
 		User:        user,
 		UpdatedAt:   time.Now().UTC(),
+		Present:     true,
 	}
 }
 
@@ -454,6 +495,22 @@ func defaultCaps() []string {
 	}
 }
 
+func resolveRole(labels map[string]string) string {
+	if labels == nil {
+		return "service"
+	}
+	role := strings.TrimSpace(strings.ToLower(labels["healthmon.role"]))
+	if role == "" {
+		return "service"
+	}
+	switch role {
+	case "service", "task":
+		return role
+	default:
+		return "service"
+	}
+}
+
 type restartTracker struct {
 	window    time.Duration
 	threshold int
@@ -524,6 +581,13 @@ func (r *restartTracker) markHealthy(name string) {
 	if time.Since(last) > r.window {
 		delete(r.loop, name)
 	}
+}
+
+func (r *restartTracker) reset(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.data, name)
+	delete(r.loop, name)
 }
 
 func (r *restartTracker) prune(list []time.Time, now time.Time) []time.Time {

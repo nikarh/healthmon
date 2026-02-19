@@ -34,6 +34,7 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/containers", s.handleContainers)
 	mux.HandleFunc("/api/containers/", s.handleContainerEvents)
+	mux.HandleFunc("/api/events", s.handleEvents)
 	mux.HandleFunc("/api/events/stream", s.handleStream)
 
 	if s.staticFS != nil {
@@ -141,6 +142,29 @@ func (s *Server) handleContainerEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	beforeID, _ := strconv.ParseInt(r.URL.Query().Get("before_id"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	items, err := s.store.ListAllEvents(r.Context(), beforeID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	resp := make([]EventResponse, 0, len(items))
+	for _, e := range items {
+		resp = append(resp, *toEventResponse(e))
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -183,6 +207,7 @@ type ContainerResponse struct {
 	CreatedAt   string         `json:"created_at"`
 	FirstSeenAt string         `json:"first_seen_at"`
 	Status      string         `json:"status"`
+	Role        string         `json:"role"`
 	Caps        []string       `json:"caps"`
 	ReadOnly    bool           `json:"read_only"`
 	User        string         `json:"user"`
@@ -222,6 +247,7 @@ func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerR
 		CreatedAt:   c.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		FirstSeenAt: c.FirstSeenAt.UTC().Format("2006-01-02T15:04:05Z"),
 		Status:      c.Status,
+		Role:        c.Role,
 		Caps:        c.Caps,
 		ReadOnly:    c.ReadOnly,
 		User:        c.User,
