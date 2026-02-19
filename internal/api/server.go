@@ -104,6 +104,15 @@ func (s *Server) handleContainers(w http.ResponseWriter, r *http.Request) {
 			if ok {
 				lastEvent = toEventResponse(event)
 			}
+		} else if c.ID > 0 {
+			event, ok, err := s.store.GetLatestEventByContainerPK(ctx, c.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if ok {
+				lastEvent = toEventResponse(event)
+			}
 		}
 		resp = append(resp, toContainerResponse(c, lastEvent))
 	}

@@ -59,12 +59,6 @@ func (s *Store) Load(ctx context.Context) error {
 		if c.Role == "" {
 			c.Role = "service"
 		}
-		if c.LastEventID == 0 {
-			if latestID, err := s.latestEventID(ctx, c.ID); err == nil && latestID > 0 {
-				c.LastEventID = latestID
-				_, _ = s.db.ExecContext(ctx, `UPDATE containers SET last_event_id = ? WHERE id = ?`, latestID, c.ID)
-			}
-		}
 		s.containers[c.Name] = &c
 	}
 	return rows.Err()
@@ -362,6 +356,48 @@ SELECT id, container_name, container_id, event_type, severity, message, ts, old_
 FROM events
 WHERE id = ?
 `, id).Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK)
+	if err == sql.ErrNoRows {
+		return Event{}, false, nil
+	}
+	if err != nil {
+		return Event{}, false, err
+	}
+	e.Timestamp = parseTime(ts)
+	if oldImage.Valid {
+		e.OldImage = oldImage.String
+	}
+	if newImage.Valid {
+		e.NewImage = newImage.String
+	}
+	if oldImageID.Valid {
+		e.OldImageID = oldImageID.String
+	}
+	if newImageID.Valid {
+		e.NewImageID = newImageID.String
+	}
+	if reason.Valid {
+		e.Reason = reason.String
+	}
+	if details.Valid {
+		e.DetailsJSON = details.String
+	}
+	return e, true, nil
+}
+
+func (s *Store) GetLatestEventByContainerPK(ctx context.Context, containerPK int64) (Event, bool, error) {
+	if containerPK == 0 {
+		return Event{}, false, nil
+	}
+	var e Event
+	var ts string
+	var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk
+FROM events
+WHERE container_pk = ?
+ORDER BY ts DESC
+LIMIT 1
+`, containerPK).Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK)
 	if err == sql.ErrNoRows {
 		return Event{}, false, nil
 	}
