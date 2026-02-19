@@ -226,7 +226,7 @@ body {
 }
 
 .container-card:hover {
-  box-shadow: 0 12px 30px var(--shadow-soft);
+  box-shadow: 0 18px 40px var(--shadow);
 }
 
 .container-main {
