@@ -421,7 +421,7 @@ body {
 .events {
   background: var(--bg-card);
   border-radius: 14px;
-  padding: 14px;
+  padding: 0;
   border: 1px solid var(--border);
 }
 
@@ -431,7 +431,7 @@ body {
   align-items: center;
   font-size: 13px;
   color: var(--text-muted);
-  padding: 14px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -440,7 +440,7 @@ body {
   flex-direction: column;
   max-height: 360px;
   overflow: auto;
-  padding-right: 4px;
+  padding-right: 0;
 }
 
 .feed-list {
@@ -455,6 +455,15 @@ body {
 .event-row {
   display: flex;
   gap: 12px;
+}
+
+.event-row-compact {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.event-row-compact:last-child {
+  border-bottom: none;
 }
 
 .feed-row {

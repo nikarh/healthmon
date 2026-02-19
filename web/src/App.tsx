@@ -124,6 +124,12 @@ const deriveChangeLine = (event: EventItem) => {
   return ''
 }
 
+const deriveContainerLine = (event: EventItem) => {
+  const container = event.container || ''
+  const id = event.container_id ? `(${shortId(event.container_id)})` : ''
+  return `${container} ${id}`.trim()
+}
+
 export default function App() {
   const [containers, setContainers] = useState<Container[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean | undefined>>({})
@@ -554,20 +560,18 @@ function ContainerRow({
             </div>
             <div className="event-list">
               {events.map((event) => (
-                <div key={event.id} className="event-row">
+                <div key={event.id} className="event-row event-row-compact">
                   <div className={`event-dot ${severityClass(event.severity)}`} />
                   <div className="event-body">
                     <div className="event-top">
-                      <span className="event-type">{event.type}</span>
+                      <span className="event-title">{deriveEventTitle(event)}</span>
                       <span className="event-time">{formatDate(event.timestamp)}</span>
                     </div>
-                    <div className="event-message">{event.message}</div>
-                    {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
-                    {(event.old_image || event.new_image) && (
-                      <div className="event-change">
-                        {event.old_image} → {event.new_image}
-                      </div>
-                    )}
+                    <div className="event-identity">{deriveContainerLine(event)}</div>
+                    {(() => {
+                      const changeLine = deriveChangeLine(event)
+                      return changeLine ? <div className="event-change">{changeLine}</div> : null
+                    })()}
                   </div>
                 </div>
               ))}
