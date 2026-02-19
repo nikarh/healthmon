@@ -475,6 +475,10 @@ body {
   border-bottom: none;
 }
 
+.feed-row-last {
+  border-bottom: none;
+}
+
 .feed-row-even {
   background: linear-gradient(90deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0));
 }

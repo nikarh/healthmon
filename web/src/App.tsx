@@ -765,6 +765,7 @@ function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight 
   }, [rowHeight, onMeasured])
 
   const event = events[index]
+  const isLast = index === events.length - 1
   const title = deriveEventTitle(event)
   const changeLine = deriveChangeLine(event)
   return (
@@ -774,7 +775,9 @@ function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight 
       aria-posinset={ariaAttributes['aria-posinset']}
       aria-setsize={ariaAttributes['aria-setsize']}
       style={style}
-      className={`event-row feed-row ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'}`}
+      className={`event-row feed-row ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'} ${
+        isLast ? 'feed-row-last' : ''
+      }`}
     >
       <div className={`event-dot ${severityClass(event.severity)}`} />
       <div className="event-body">
