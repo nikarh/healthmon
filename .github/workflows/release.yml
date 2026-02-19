@@ -116,11 +116,15 @@ jobs:
       - name: Create Git tag
         run: |
           git tag v${{ steps.version.outputs.version }}
+          git tag -f v${{ steps.version.outputs.semver_minor }}
+          git tag -f v${{ steps.version.outputs.semver_major }}
 
       - name: Push changes
         run: |
           git push origin HEAD
-          git push origin --tags
+          git push origin v${{ steps.version.outputs.version }}
+          git push origin -f v${{ steps.version.outputs.semver_minor }}
+          git push origin -f v${{ steps.version.outputs.semver_major }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
