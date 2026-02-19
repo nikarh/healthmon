@@ -91,8 +91,8 @@ body {
 
 .title-stack {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -105,6 +105,7 @@ body {
 }
 
 .tag {
+  display: inline-flex;
   font-family: 'Spline Sans Mono', monospace;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -664,6 +665,12 @@ body {
 
   .title-mobile {
     display: inline;
+  }
+
+  .title-stack {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 
   .events-feed {
