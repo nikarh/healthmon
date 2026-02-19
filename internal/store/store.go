@@ -59,15 +59,14 @@ func (s *Store) Load(ctx context.Context) error {
 		if c.Role == "" {
 			c.Role = "service"
 		}
-		if c.LastEventID == 0 {
-			if latestID, err := s.latestEventID(ctx, c.ID); err == nil && latestID > 0 {
-				c.LastEventID = latestID
-				_, _ = s.db.ExecContext(ctx, `UPDATE containers SET last_event_id = ? WHERE id = ?`, latestID, c.ID)
-			}
-		}
 		s.containers[c.Name] = &c
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	s.backfillLastEventIDs(ctx)
+	return nil
 }
 
 func (s *Store) ListContainers() []Container {
@@ -592,6 +591,41 @@ func (s *Store) latestEventID(ctx context.Context, containerPK int64) (int64, er
 		return 0, nil
 	}
 	return id.Int64, nil
+}
+
+func (s *Store) backfillLastEventIDs(ctx context.Context) {
+	missing := make(map[int64]*Container)
+	for _, c := range s.containers {
+		if c.LastEventID == 0 {
+			missing[c.ID] = c
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT container_pk, MAX(id) FROM events GROUP BY container_pk`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var containerPK int64
+		var lastID sql.NullInt64
+		if err := rows.Scan(&containerPK, &lastID); err != nil {
+			return
+		}
+		if !lastID.Valid || lastID.Int64 == 0 {
+			continue
+		}
+		c, ok := missing[containerPK]
+		if !ok {
+			continue
+		}
+		c.LastEventID = lastID.Int64
+		_, _ = s.db.ExecContext(ctx, `UPDATE containers SET last_event_id = ? WHERE id = ?`, lastID.Int64, containerPK)
+	}
 }
 
 func boolToInt(val bool) int {
