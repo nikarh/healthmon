@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import logoUrl from './assets/logo.svg'
 import './App.css'
 
 interface Container {
@@ -87,6 +88,7 @@ export default function App() {
   const [view, setView] = useState<ViewMode>('containers')
   const [allEvents, setAllEvents] = useState<EventItem[]>([])
   const [allEventsPage, setAllEventsPage] = useState<PageState>({ loading: false, done: false })
+  const [allEventsError, setAllEventsError] = useState<string | null>(null)
 
   const sortedContainers = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -169,6 +171,7 @@ export default function App() {
 
   const loadAllEvents = useCallback(async () => {
     if (allEventsPage.loading || allEventsPage.done) return
+    setAllEventsError(null)
     setAllEventsPage((prev) => ({
       ...prev,
       loading: true,
@@ -180,18 +183,24 @@ export default function App() {
     if (beforeId) {
       query.set('before_id', beforeId.toString())
     }
-    const res = await fetch(`/api/events?${query.toString()}`)
-    if (!res.ok) {
-      setAllEventsPage((prev) => ({ ...prev, loading: false }))
-      return
+    try {
+      const res = await fetch(`/api/events?${query.toString()}`)
+      if (!res.ok) {
+        setAllEventsError('Unable to load events. Check connection and retry.')
+        setAllEventsPage((prev) => ({ ...prev, loading: false, done: true }))
+        return
+      }
+      const data = (await res.json()) as EventItem[]
+      setAllEvents((prev) => [...prev, ...data])
+      setAllEventsPage((prev) => ({
+        beforeId: data.length ? data[data.length - 1].id : beforeId,
+        loading: false,
+        done: data.length < PAGE_SIZE,
+      }))
+    } catch {
+      setAllEventsError('Unable to load events. Check connection and retry.')
+      setAllEventsPage((prev) => ({ ...prev, loading: false, done: true }))
     }
-    const data = (await res.json()) as EventItem[]
-    setAllEvents((prev) => [...prev, ...data])
-    setAllEventsPage((prev) => ({
-      beforeId: data.length ? data[data.length - 1].id : beforeId,
-      loading: false,
-      done: data.length < PAGE_SIZE,
-    }))
   }, [allEventsPage.beforeId, allEventsPage.done, allEventsPage.loading])
 
   const toggleExpanded = useCallback(
@@ -265,8 +274,14 @@ export default function App() {
     <div className="app">
       <header className="hero">
         <div className="title-row">
-          <span className="tag">healthmon</span>
-          <h1>Container Health Monitor</h1>
+          <img className="logo" src={logoUrl} alt="Healthmon logo" />
+          <div className="title-stack">
+            <span className="tag">healthmon</span>
+            <h1>
+              <span className="title-full">Container Health Monitor</span>
+              <span className="title-mobile">healthmon</span>
+            </h1>
+          </div>
         </div>
         <button className="refresh" type="button" onClick={handleRefresh}>
           Refresh
@@ -370,6 +385,12 @@ export default function App() {
             events={allEvents}
             page={allEventsPage}
             onLoadMore={loadAllEvents}
+            error={allEventsError}
+            onRetry={() => {
+              setAllEventsError(null)
+              setAllEventsPage((prev) => ({ ...prev, done: false }))
+              void loadAllEvents()
+            }}
           />
         )}
       </section>
@@ -524,13 +545,15 @@ interface AllEventsProps {
   events: EventItem[]
   page: PageState
   onLoadMore: () => Promise<void>
+  error: string | null
+  onRetry: () => void
 }
 
-function AllEventsFeed({ events, page, onLoadMore }: AllEventsProps) {
+function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsProps) {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (page.done || page.loading) return undefined
+    if (page.done || page.loading || error) return undefined
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -579,10 +602,20 @@ function AllEventsFeed({ events, page, onLoadMore }: AllEventsProps) {
             </div>
           </div>
         ))}
-        {!page.done && <div ref={sentinelRef} className="event-sentinel" />}
+        {!page.done && !error && <div ref={sentinelRef} className="event-sentinel" />}
       </div>
+      {error && (
+        <div className="error-state">
+          <p>{error}</p>
+          <button className="retry-button" type="button" onClick={onRetry}>
+            Retry
+          </button>
+        </div>
+      )}
       {page.loading && <div className="loading">Loading more events…</div>}
-      {page.done && events.length === 0 && <div className="empty">No events recorded yet.</div>}
+      {page.done && !error && events.length === 0 && (
+        <div className="empty">No events recorded yet.</div>
+      )}
     </div>
   )
 }
