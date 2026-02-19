@@ -195,11 +195,11 @@ export default function App() {
       }
       const data = (await res.json()) as EventItem[]
       setAllEvents((prev) => [...prev, ...data])
-      setAllEventsPage((prev) => ({
+      setAllEventsPage({
         beforeId: data.length ? data[data.length - 1].id : beforeId,
         loading: false,
         done: data.length < PAGE_SIZE,
-      }))
+      })
     } catch {
       setAllEventsError('Unable to load events. Check connection and retry.')
       setAllEventsPage((prev) => ({ ...prev, loading: false, done: true }))
@@ -263,12 +263,6 @@ export default function App() {
     }
   }, [expanded])
 
-  useEffect(() => {
-    if (view !== 'events') return
-    if (allEvents.length > 0 || allEventsPage.loading || allEventsPage.done) return
-    void loadAllEvents()
-  }, [view, allEvents.length, allEventsPage.loading, allEventsPage.done, loadAllEvents])
-
   const handleRefresh = () => {
     void loadContainers()
   }
@@ -307,6 +301,9 @@ export default function App() {
             type="button"
             onClick={() => {
               setView('events')
+              if (allEvents.length === 0 && !allEventsPage.loading && !allEventsPage.done) {
+                void loadAllEvents()
+              }
             }}
           >
             Events
@@ -564,9 +561,19 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
   )
 
   const rowComponent = useCallback(
-    ({ index, style, events: rows }: { index: number; style: CSSProperties; events: EventItem[] }) => {
-      const event = rows[index]
-      if (!event) return null
+    ({
+      index,
+      style,
+    }: {
+      index: number
+      style: CSSProperties
+      ariaAttributes: {
+        'aria-posinset': number
+        'aria-setsize': number
+        role: 'listitem'
+      }
+    }) => {
+      const event = events[index]
       return (
         <div
           style={style}
@@ -595,7 +602,7 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
         </div>
       )
     },
-    [],
+    [events],
   )
 
   return (
@@ -606,20 +613,24 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
       </div>
       <div className="event-list feed-list">
         {events.length > 0 && (
-          <AutoSizer>
-            {({ height, width }) => (
-              <List
-                height={height}
-                width={width}
-                rowCount={events.length}
-                rowHeight={136}
-                rowComponent={rowComponent}
-                rowProps={{ events }}
-                onRowsRendered={({ stopIndex }) => handleItemsRendered({ stopIndex })}
-                overscanCount={4}
-              />
-            )}
-          </AutoSizer>
+          <AutoSizer
+            renderProp={({ height, width }) => {
+              if (!height || !width) return null
+              return (
+                <List
+                  style={{ height, width }}
+                  rowCount={events.length}
+                  rowHeight={136}
+                  rowComponent={rowComponent}
+                  rowProps={{}}
+                  onRowsRendered={({ stopIndex }) => {
+                    handleItemsRendered({ stopIndex })
+                  }}
+                  overscanCount={4}
+                />
+              )
+            }}
+          />
         )}
       </div>
       {error && (

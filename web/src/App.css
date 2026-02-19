@@ -216,8 +216,7 @@ body {
   border-radius: 18px;
   border: 1px solid var(--border);
   overflow: hidden;
-  transition:
-    box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
 .container-card.flash {
