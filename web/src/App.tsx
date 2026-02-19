@@ -11,6 +11,7 @@ interface Container {
   created_at: string
   first_seen_at: string
   status: string
+  role: string
   caps: string[]
   read_only: boolean
   user: string
@@ -46,6 +47,7 @@ interface PageState {
 }
 
 const PAGE_SIZE = 20
+type ViewMode = 'containers' | 'events'
 
 const statusClass = (status: string) => {
   const s = status.toLowerCase()
@@ -82,13 +84,36 @@ export default function App() {
   const [pages, setPages] = useState<Record<string, PageState | undefined>>({})
   const [flash, setFlash] = useState<Record<string, boolean | undefined>>({})
   const [query, setQuery] = useState('')
+  const [view, setView] = useState<ViewMode>('containers')
+  const [allEvents, setAllEvents] = useState<EventItem[]>([])
+  const [allEventsPage, setAllEventsPage] = useState<PageState>({ loading: false, done: false })
 
   const sortedContainers = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     const filtered = normalized
       ? containers.filter((item) => item.name.toLowerCase().includes(normalized))
       : containers
-    return [...filtered].sort((a, b) => a.name.localeCompare(b.name))
+    const services = filtered.filter((item) => item.role !== 'task')
+    const tasks = filtered.filter((item) => item.role === 'task')
+
+    const isUnhealthyService = (item: Container) => item.status.toLowerCase() !== 'running'
+    const isCompletedTask = (item: Container) => item.status.toLowerCase() === 'exited'
+
+    const sortedServices = [...services].sort((a, b) => {
+      const aRank = isUnhealthyService(a) ? 0 : 1
+      const bRank = isUnhealthyService(b) ? 0 : 1
+      if (aRank !== bRank) return aRank - bRank
+      return a.name.localeCompare(b.name)
+    })
+
+    const sortedTasks = [...tasks].sort((a, b) => {
+      const aRank = isCompletedTask(a) ? 1 : 0
+      const bRank = isCompletedTask(b) ? 1 : 0
+      if (aRank !== bRank) return aRank - bRank
+      return a.name.localeCompare(b.name)
+    })
+
+    return { services: sortedServices, tasks: sortedTasks }
   }, [containers, query])
 
   const loadContainers = useCallback(async () => {
@@ -142,6 +167,33 @@ export default function App() {
     [pages],
   )
 
+  const loadAllEvents = useCallback(async () => {
+    if (allEventsPage.loading || allEventsPage.done) return
+    setAllEventsPage((prev) => ({
+      ...prev,
+      loading: true,
+    }))
+    const beforeId = allEventsPage.beforeId
+    const query = new URLSearchParams({
+      limit: PAGE_SIZE.toString(),
+    })
+    if (beforeId) {
+      query.set('before_id', beforeId.toString())
+    }
+    const res = await fetch(`/api/events?${query.toString()}`)
+    if (!res.ok) {
+      setAllEventsPage((prev) => ({ ...prev, loading: false }))
+      return
+    }
+    const data = (await res.json()) as EventItem[]
+    setAllEvents((prev) => [...prev, ...data])
+    setAllEventsPage((prev) => ({
+      beforeId: data.length ? data[data.length - 1].id : beforeId,
+      loading: false,
+      done: data.length < PAGE_SIZE,
+    }))
+  }, [allEventsPage.beforeId, allEventsPage.done, allEventsPage.loading])
+
   const toggleExpanded = useCallback(
     (name: string) => {
       const nextExpanded = !(expanded[name] ?? false)
@@ -187,12 +239,23 @@ export default function App() {
           [update.container.name]: [update.event, ...current],
         }
       })
+
+      setAllEvents((prev) => {
+        if (prev.some((item) => item.id === update.event.id)) return prev
+        return [update.event, ...prev]
+      })
     }
 
     return () => {
       ws.close()
     }
   }, [expanded])
+
+  useEffect(() => {
+    if (view !== 'events') return
+    if (allEvents.length > 0 || allEventsPage.loading || allEventsPage.done) return
+    void loadAllEvents()
+  }, [view, allEvents.length, allEventsPage.loading, allEventsPage.done, loadAllEvents])
 
   const handleRefresh = () => {
     void loadContainers()
@@ -211,41 +274,104 @@ export default function App() {
       </header>
 
       <section className="container-list">
-        <div className="search-row">
-          <input
-            className="search-input"
-            type="search"
-            placeholder="Search containers"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
+        <div className="view-tabs">
+          <button
+            className={`view-tab ${view === 'containers' ? 'active' : ''}`}
+            type="button"
+            onClick={() => {
+              setView('containers')
             }}
-          />
-          {query && (
-            <button
-              className="clear-search"
-              type="button"
-              onClick={() => {
-                setQuery('')
-              }}
-            >
-              Clear
-            </button>
-          )}
+          >
+            Containers
+          </button>
+          <button
+            className={`view-tab ${view === 'events' ? 'active' : ''}`}
+            type="button"
+            onClick={() => {
+              setView('events')
+            }}
+          >
+            Events
+          </button>
         </div>
-        {sortedContainers.length === 0 && <div className="empty">No containers found yet.</div>}
-        {sortedContainers.map((container) => (
-          <ContainerRow
-            key={container.name}
-            container={container}
-            expanded={expanded[container.name] ?? false}
-            flash={flash[container.name] ?? false}
-            onToggle={toggleExpanded}
-            events={events[container.name] ?? []}
-            page={pages[container.name] ?? { loading: false, done: false }}
-            onLoadMore={loadEvents}
+
+        {view === 'containers' && (
+          <>
+            <div className="search-row">
+              <input
+                className="search-input"
+                type="search"
+                placeholder="Search containers"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                }}
+              />
+              {query && (
+                <button
+                  className="clear-search"
+                  type="button"
+                  onClick={() => {
+                    setQuery('')
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {sortedContainers.services.length === 0 && sortedContainers.tasks.length === 0 && (
+              <div className="empty">No containers found yet.</div>
+            )}
+            {sortedContainers.services.length > 0 && (
+              <div className="section">
+                <div className="section-header">
+                  <h2>Services</h2>
+                  <span>{sortedContainers.services.length}</span>
+                </div>
+                {sortedContainers.services.map((container) => (
+                  <ContainerRow
+                    key={container.name}
+                    container={container}
+                    expanded={expanded[container.name] ?? false}
+                    flash={flash[container.name] ?? false}
+                    onToggle={toggleExpanded}
+                    events={events[container.name] ?? []}
+                    page={pages[container.name] ?? { loading: false, done: false }}
+                    onLoadMore={loadEvents}
+                  />
+                ))}
+              </div>
+            )}
+            {sortedContainers.tasks.length > 0 && (
+              <div className="section">
+                <div className="section-header">
+                  <h2>Tasks</h2>
+                  <span>{sortedContainers.tasks.length}</span>
+                </div>
+                {sortedContainers.tasks.map((container) => (
+                  <ContainerRow
+                    key={container.name}
+                    container={container}
+                    expanded={expanded[container.name] ?? false}
+                    flash={flash[container.name] ?? false}
+                    onToggle={toggleExpanded}
+                    events={events[container.name] ?? []}
+                    page={pages[container.name] ?? { loading: false, done: false }}
+                    onLoadMore={loadEvents}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {view === 'events' && (
+          <AllEventsFeed
+            events={allEvents}
+            page={allEventsPage}
+            onLoadMore={loadAllEvents}
           />
-        ))}
+        )}
       </section>
     </div>
   )
@@ -305,11 +431,11 @@ function ContainerRow({
         <div className={`status-dot ${statusClass(container.status)}`} />
         <div className="container-info">
           <div className="name-row">
-            <span className="name">{container.name}</span>
+            <span className="name container-name">{container.name}</span>
             <span className="status-pill">{container.status}</span>
           </div>
           <div className="meta">
-            <span>
+            <span className="image-name">
               {container.image}:{container.image_tag}
             </span>
             <span>Created: {formatDate(container.created_at)}</span>
@@ -391,5 +517,72 @@ function ContainerRow({
         </div>
       )}
     </article>
+  )
+}
+
+interface AllEventsProps {
+  events: EventItem[]
+  page: PageState
+  onLoadMore: () => Promise<void>
+}
+
+function AllEventsFeed({ events, page, onLoadMore }: AllEventsProps) {
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (page.done || page.loading) return undefined
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void onLoadMore()
+        }
+      },
+      { rootMargin: '120px' },
+    )
+
+    const sentinel = sentinelRef.current
+    if (sentinel) observer.observe(sentinel)
+
+    return () => {
+      if (sentinel) observer.unobserve(sentinel)
+      observer.disconnect()
+    }
+  }, [onLoadMore, page.done, page.loading])
+
+  return (
+    <div className="events-feed">
+      <div className="events-header">
+        <h3>All events</h3>
+        <span>{events.length} loaded</span>
+      </div>
+      <div className="event-list feed-list">
+        {events.map((event) => (
+          <div key={event.id} className="event-row">
+            <div className={`event-dot ${severityClass(event.severity)}`} />
+            <div className="event-body">
+              <div className="event-top">
+                <span className="event-type">{event.type}</span>
+                <span className="event-time">{formatDate(event.timestamp)}</span>
+              </div>
+              <div className="event-message">{event.message}</div>
+              <div className="event-meta">
+                <span className="event-container">{event.container}</span>
+                {event.container_id && <span className="event-id">{event.container_id}</span>}
+              </div>
+              {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
+              {(event.old_image || event.new_image) && (
+                <div className="event-change">
+                  {event.old_image} → {event.new_image}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {!page.done && <div ref={sentinelRef} className="event-sentinel" />}
+      </div>
+      {page.loading && <div className="loading">Loading more events…</div>}
+      {page.done && events.length === 0 && <div className="empty">No events recorded yet.</div>}
+    </div>
   )
 }
