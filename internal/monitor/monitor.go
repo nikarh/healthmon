@@ -123,9 +123,11 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 		m.handleCreate(ctx, name, msg.Actor.ID)
 	case msg.Action == "start":
 		m.handleStart(ctx, name, msg.Actor.ID)
+	case msg.Action == "stop":
+		m.handleStop(ctx, name, msg.Actor.ID)
 	case msg.Action == "die":
 		exitCode := strings.TrimSpace(msg.Actor.Attributes["exitCode"])
-		if exitCode == "0" {
+		if exitCode == "" || exitCode == "0" {
 			m.handleStop(ctx, name, msg.Actor.ID)
 		} else {
 			m.handleRestartLike(ctx, name, msg.Actor.ID, "die")
