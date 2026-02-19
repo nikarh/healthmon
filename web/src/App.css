@@ -65,7 +65,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 12px 16px 12px;
+  padding: 0;
   min-height: 100dvh;
 }
 
@@ -77,7 +77,7 @@ body {
   padding: 10px 14px;
   background: var(--bg-header);
   color: var(--text-invert);
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow: 0 8px 18px var(--shadow);
 }
 
@@ -151,6 +151,7 @@ body {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  padding: 12px 16px 12px;
 }
 
 .view-tabs {
@@ -557,11 +558,6 @@ body {
   word-break: break-word;
 }
 
-.event-id {
-  font-family: 'Spline Sans Mono', monospace;
-  font-size: 11px;
-}
-
 .event-sentinel {
   height: 1px;
 }
@@ -629,13 +625,13 @@ body {
 }
 
 @media (max-width: 600px) {
-  .app {
-    padding: 8px 10px 14px;
-  }
-
   .hero {
     padding: 8px 10px;
-    border-radius: 10px;
+    border-radius: 0;
+  }
+
+  .container-list {
+    padding: 8px 10px 14px;
   }
 
   .container-main {
