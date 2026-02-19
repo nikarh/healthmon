@@ -438,13 +438,24 @@ body {
 
 .feed-list {
   max-height: none;
-  overflow: visible;
+  overflow: hidden;
   padding-right: 0;
+  height: min(70vh, 720px);
+  min-height: 320px;
 }
 
 .event-row {
   display: flex;
   gap: 12px;
+}
+
+.feed-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.feed-row:last-child {
+  border-bottom: none;
 }
 
 .event-body {
@@ -470,6 +481,13 @@ body {
 .event-message {
   font-size: 14px;
   color: var(--text);
+}
+
+.event-message.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .event-reason,

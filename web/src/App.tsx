@@ -1,4 +1,7 @@
+import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AutoSizer from 'react-virtualized-auto-sizer'
+import { FixedSizeList } from 'react-window'
 import logoUrl from './assets/logo.svg'
 import './App.css'
 
@@ -550,28 +553,47 @@ interface AllEventsProps {
 }
 
 function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsProps) {
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const handleItemsRendered = useCallback(
+    ({ visibleStopIndex }: { visibleStopIndex: number }) => {
+      if (page.loading || page.done || error) return
+      if (visibleStopIndex >= events.length - 4) {
+        void onLoadMore()
+      }
+    },
+    [events.length, onLoadMore, page.done, page.loading, error],
+  )
 
-  useEffect(() => {
-    if (page.done || page.loading || error) return undefined
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          void onLoadMore()
-        }
-      },
-      { rootMargin: '120px' },
-    )
-
-    const sentinel = sentinelRef.current
-    if (sentinel) observer.observe(sentinel)
-
-    return () => {
-      if (sentinel) observer.unobserve(sentinel)
-      observer.disconnect()
-    }
-  }, [onLoadMore, page.done, page.loading])
+  const rowRenderer = useCallback(
+    ({ index, style }: { index: number; style: CSSProperties }) => {
+      const event = events[index]
+      if (!event) return null
+      return (
+        <div style={style} className="event-row feed-row">
+          <div className={`event-dot ${severityClass(event.severity)}`} />
+          <div className="event-body">
+            <div className="event-top">
+              <span className="event-type">{event.type}</span>
+              <span className="event-time">{formatDate(event.timestamp)}</span>
+            </div>
+            <div className="event-message clamp" title={event.message}>
+              {event.message}
+            </div>
+            <div className="event-meta">
+              <span className="event-container">{event.container}</span>
+              {event.container_id && <span className="event-id">{event.container_id}</span>}
+            </div>
+            {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
+            {(event.old_image || event.new_image) && (
+              <div className="event-change">
+                {event.old_image} → {event.new_image}
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    },
+    [events],
+  )
 
   return (
     <div className="events-feed">
@@ -580,29 +602,21 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
         <span>{events.length} loaded</span>
       </div>
       <div className="event-list feed-list">
-        {events.map((event) => (
-          <div key={event.id} className="event-row">
-            <div className={`event-dot ${severityClass(event.severity)}`} />
-            <div className="event-body">
-              <div className="event-top">
-                <span className="event-type">{event.type}</span>
-                <span className="event-time">{formatDate(event.timestamp)}</span>
-              </div>
-              <div className="event-message">{event.message}</div>
-              <div className="event-meta">
-                <span className="event-container">{event.container}</span>
-                {event.container_id && <span className="event-id">{event.container_id}</span>}
-              </div>
-              {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
-              {(event.old_image || event.new_image) && (
-                <div className="event-change">
-                  {event.old_image} → {event.new_image}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {!page.done && !error && <div ref={sentinelRef} className="event-sentinel" />}
+        {events.length > 0 && (
+          <AutoSizer>
+            {({ height, width }) => (
+              <FixedSizeList
+                height={height}
+                width={width}
+                itemCount={events.length}
+                itemSize={136}
+                onItemsRendered={handleItemsRendered}
+              >
+                {rowRenderer}
+              </FixedSizeList>
+            )}
+          </AutoSizer>
+        )}
       </div>
       {error && (
         <div className="error-state">
