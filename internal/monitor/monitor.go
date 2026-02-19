@@ -354,10 +354,19 @@ func (m *Monitor) emitAlert(ctx context.Context, name, id, eventType, message, s
 }
 
 func (m *Monitor) emit(ctx context.Context, e store.Event) {
-	container, ok := m.store.GetContainer(e.Container)
+	var container store.Container
+	var ok bool
+	if e.ContainerID != "" {
+		container, ok, _ = m.store.GetContainerByContainerID(ctx, e.ContainerID)
+	}
+	if !ok {
+		container, ok = m.store.GetContainer(e.Container)
+	}
 	if !ok {
 		return
 	}
+
+	e.Container = container.Name
 	e.ContainerPK = container.ID
 	log.Printf("event: type=%s severity=%s container=%s", e.Type, e.Severity, e.Container)
 	id, err := m.store.AddEvent(ctx, e)

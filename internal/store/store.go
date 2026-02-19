@@ -134,6 +134,57 @@ func (s *Store) GetContainerByName(ctx context.Context, name string) (Container,
 	return c, true, nil
 }
 
+func (s *Store) GetContainerByContainerID(ctx context.Context, containerID string) (Container, bool, error) {
+	if containerID == "" {
+		return Container{}, false, nil
+	}
+
+	s.mu.RLock()
+	for _, c := range s.containers {
+		if c.ContainerID == containerID {
+			copy := *c
+			s.mu.RUnlock()
+			return copy, true, nil
+		}
+	}
+	s.mu.RUnlock()
+
+	var c Container
+	var capsJSON string
+	var readOnly int
+	var present int
+	var createdAt string
+	var firstSeen string
+	var updatedAt string
+	var lastEventID sql.NullInt64
+
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, first_seen_at, status, role, caps, read_only, user, last_event_id, updated_at, present FROM containers WHERE container_id = ?`, containerID).Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &firstSeen, &c.Status, &c.Role, &capsJSON, &readOnly, &c.User, &lastEventID, &updatedAt, &present)
+	if err == sql.ErrNoRows {
+		return Container{}, false, nil
+	}
+	if err != nil {
+		return Container{}, false, err
+	}
+	if err := json.Unmarshal([]byte(capsJSON), &c.Caps); err != nil {
+		return Container{}, false, err
+	}
+	c.ReadOnly = readOnly == 1
+	c.CreatedAt = parseTime(createdAt)
+	c.FirstSeenAt = parseTime(firstSeen)
+	c.UpdatedAt = parseTime(updatedAt)
+	if lastEventID.Valid {
+		c.LastEventID = lastEventID.Int64
+	}
+	c.Present = present == 1
+	if c.Role == "" {
+		c.Role = "service"
+	}
+	s.mu.Lock()
+	s.containers[c.Name] = &c
+	s.mu.Unlock()
+	return c, true, nil
+}
+
 func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
