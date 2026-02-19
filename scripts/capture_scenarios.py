@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+import tomllib
 
 
 @dataclass
@@ -206,11 +206,12 @@ def run_action(step: Dict[str, Any], scenario_label: str, recorder: EventRecorde
 
 
 def load_scenario(path: Path) -> List[Dict[str, Any]]:
-    with path.open("r", encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
-    if not isinstance(data, list):
-        raise ValueError(f"scenario {path} must be a list")
-    return data
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+    steps = data.get("step")
+    if not isinstance(steps, list):
+        raise ValueError(f"scenario {path} must define [[step]] entries")
+    return steps
 
 
 def write_jsonl(path: Path, items: List[Any]) -> None:
@@ -228,7 +229,7 @@ def main() -> int:
 
     scenario_dir = Path(args.scenario_dir)
     dump_dir = Path(args.dump_dir)
-    scenarios = sorted(scenario_dir.glob("*.yaml"))
+    scenarios = sorted(scenario_dir.glob("*.toml"))
     if not scenarios:
         print(f"no scenarios found in {scenario_dir}", file=sys.stderr)
         return 1

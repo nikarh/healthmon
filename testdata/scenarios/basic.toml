@@ -1,0 +1,73 @@
+[[step]]
+action = "run"
+image = "alpine"
+name = "hm-test-alpha"
+command = ["sleep", "120"]
+
+[[step]]
+action = "run"
+image = "alpine"
+name = "hm-test-bravo"
+command = ["sleep", "120"]
+
+[[step]]
+action = "kill"
+name = "hm-test-bravo"
+signal = 15
+
+[[step]]
+action = "rename"
+from = "hm-test-alpha"
+to = "hm-test-swap"
+
+[[step]]
+action = "run"
+image = "alpine"
+name = "hm-test-alpha"
+command = ["sleep", "120"]
+
+[[step]]
+action = "kill"
+name = "hm-test-swap"
+signal = 9
+
+[[step]]
+action = "rm"
+name = "hm-test-swap"
+force = true
+
+[[step]]
+action = "kill"
+name = "hm-test-bravo"
+signal = 9
+
+[[step]]
+action = "rm"
+name = "hm-test-bravo"
+force = true
+
+[[step]]
+action = "run"
+image = "alpine"
+name = "hm-test-bravo"
+command = ["sleep", "120"]
+
+[[step]]
+action = "kill"
+name = "hm-test-alpha"
+signal = 9
+
+[[step]]
+action = "rm"
+name = "hm-test-alpha"
+force = true
+
+[[step]]
+action = "kill"
+name = "hm-test-bravo"
+signal = 9
+
+[[step]]
+action = "rm"
+name = "hm-test-bravo"
+force = true
