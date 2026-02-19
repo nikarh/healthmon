@@ -81,6 +81,12 @@ const formatDate = (val: string) => {
   })
 }
 
+const shortId = (val: string, max = 12) => {
+  if (!val) return ''
+  if (val.length <= max) return val
+  return `${val.slice(0, max)}…`
+}
+
 export default function App() {
   const [containers, setContainers] = useState<Container[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean | undefined>>({})
@@ -590,7 +596,11 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
             </div>
             <div className="event-meta">
               <span className="event-container">{event.container}</span>
-              {event.container_id && <span className="event-id">{event.container_id}</span>}
+              {event.container_id && (
+                <span className="event-id" title={event.container_id}>
+                  {shortId(event.container_id)}
+                </span>
+              )}
             </div>
             {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
             {(event.old_image || event.new_image) && (
