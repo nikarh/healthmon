@@ -69,6 +69,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '25.6'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install UI deps
+        working-directory: web
+        run: npm ci
+
+      - name: Build UI
+        working-directory: web
+        run: npm run build
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -86,7 +101,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.ci
           platforms: linux/amd64,linux/arm64/v8
           push: true
           tags: |

@@ -1,0 +1,13 @@
+# Build backend (expects prebuilt UI in cmd/healthmon/web/dist)
+FROM golang:1.26.0-trixie AS gobuild
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/healthmon ./cmd/healthmon
+
+# Final
+FROM scratch
+COPY --from=gobuild /out/healthmon /healthmon
+EXPOSE 8080
+ENTRYPOINT ["/healthmon"]
