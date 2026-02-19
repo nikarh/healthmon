@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,6 +24,7 @@ import (
 	"healthmon/internal/store"
 
 	"github.com/moby/moby/api/types/events"
+	"nhooyr.io/websocket"
 )
 
 type inspectRecord struct {
@@ -73,6 +75,7 @@ type mockDockerServer struct {
 	listener   net.Listener
 	doneOnce   sync.Once
 	doneCh     chan struct{}
+	allowCh    chan struct{}
 }
 
 func newMockDockerServer(t *testing.T, events []events.Message, inspects []inspectRecord) *mockDockerServer {
@@ -82,6 +85,7 @@ func newMockDockerServer(t *testing.T, events []events.Message, inspects []inspe
 		events:   events,
 		inspects: newInspectQueue(inspects),
 		doneCh:   make(chan struct{}),
+		allowCh:  make(chan struct{}, 1),
 	}
 }
 
@@ -119,6 +123,10 @@ func (m *mockDockerServer) WaitEventsDone(t *testing.T, timeout time.Duration) {
 	}
 }
 
+func (m *mockDockerServer) AllowNext() {
+	m.allowCh <- struct{}{}
+}
+
 func (m *mockDockerServer) handle(w http.ResponseWriter, r *http.Request) {
 	path := stripDockerVersionPrefix(r.URL.Path)
 	switch {
@@ -140,6 +148,11 @@ func (m *mockDockerServer) handle(w http.ResponseWriter, r *http.Request) {
 		flusher, _ := w.(http.Flusher)
 		enc := json.NewEncoder(w)
 		for _, msg := range m.events {
+			select {
+			case <-m.allowCh:
+			case <-r.Context().Done():
+				break
+			}
 			if r.Context().Err() != nil {
 				break
 			}
@@ -284,7 +297,7 @@ func resolveReplayPaths() (string, string, error) {
 	return eventsPath, inspectsPath, nil
 }
 
-func startMonitorWithReplay(t *testing.T, events []events.Message, inspects []inspectRecord) (*store.Store, func()) {
+func startMonitorWithReplay(t *testing.T, events []events.Message, inspects []inspectRecord) (*store.Store, *mockDockerServer, *httptest.Server, func()) {
 	t.Helper()
 	mock := newMockDockerServer(t, events, inspects)
 	host, err := mock.Start()
@@ -310,6 +323,7 @@ func startMonitorWithReplay(t *testing.T, events []events.Message, inspects []in
 	}
 
 	srv := api.NewServer(st, api.NewBroadcaster())
+	httpServer := httptest.NewServer(srv.Routes())
 	mon := New(config.Config{
 		DockerHost:           host,
 		RestartWindowSeconds: 30,
@@ -322,23 +336,21 @@ func startMonitorWithReplay(t *testing.T, events []events.Message, inspects []in
 		done <- mon.Start(runCtx)
 	}()
 
-	mock.WaitEventsDone(t, 5*time.Second)
-	cancel()
-
-	select {
-	case err := <-done:
-		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
-			t.Fatalf("monitor error: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatalf("monitor did not exit")
-	}
-
 	cleanup := func() {
+		httpServer.Close()
 		mock.Close()
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+				t.Fatalf("monitor error: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("monitor did not exit")
+		}
 		_ = dbConn.Close()
 	}
-	return st, cleanup
+	return st, mock, httpServer, cleanup
 }
 
 func TestMonitorReplayLinksEvents(t *testing.T) {
@@ -356,10 +368,87 @@ func TestMonitorReplayLinksEvents(t *testing.T) {
 		t.Fatalf("load inspects: %v", err)
 	}
 
-	st, cleanup := startMonitorWithReplay(t, messages, records)
+	st, mock, httpServer, cleanup := startMonitorWithReplay(t, messages, records)
 	defer cleanup()
 
 	ctx := context.Background()
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/events/stream"
+	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	defer wsConn.Close(websocket.StatusNormalClosure, "closing")
+
+	nameIDs := buildNameIDIndex(messages)
+	expectEmit := map[string]struct{}{
+		"create":  {},
+		"start":   {},
+		"die":     {},
+		"kill":    {},
+		"restart": {},
+		"oom":     {},
+	}
+
+	for _, msg := range messages {
+		mock.AllowNext()
+
+		action := strings.ToLower(string(msg.Action))
+		if _, ok := expectEmit[action]; !ok {
+			continue
+		}
+
+		update, err := readWSUpdate(ctx, wsConn)
+		if err != nil {
+			t.Fatalf("ws read: %v", err)
+		}
+
+		expectedName := strings.TrimPrefix(msg.Actor.Attributes["name"], "/")
+		expectedID := msg.Actor.ID
+		if update.Event.Container != expectedName {
+			t.Fatalf("expected event container %q got %q", expectedName, update.Event.Container)
+		}
+		if update.Event.ContainerID != expectedID {
+			t.Fatalf("expected event id %q got %q", expectedID, update.Event.ContainerID)
+		}
+
+		ids := nameIDs[expectedName]
+		if ids == nil {
+			t.Fatalf("missing name mapping for %q", expectedName)
+		}
+		if _, ok := ids[expectedID]; !ok {
+			t.Fatalf("event mapped to %q id %q not seen in replay", expectedName, expectedID)
+		}
+
+		resp, err := http.Get(httpServer.URL + "/api/containers")
+		if err != nil {
+			t.Fatalf("get containers: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("containers status %d", resp.StatusCode)
+		}
+		var containers []api.ContainerResponse
+		if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
+			resp.Body.Close()
+			t.Fatalf("decode containers: %v", err)
+		}
+		resp.Body.Close()
+
+		found := false
+		for _, c := range containers {
+			if c.Name == expectedName {
+				found = true
+				if c.ContainerID != expectedID {
+					t.Fatalf("container %q id mismatch: %q != %q", expectedName, c.ContainerID, expectedID)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected container %q not found in api response", expectedName)
+		}
+	}
+
+	mock.WaitEventsDone(t, 5*time.Second)
+
 	eventsList, err := st.ListAllEvents(ctx, 0, 5000)
 	if err != nil {
 		t.Fatalf("list events: %v", err)
@@ -367,16 +456,18 @@ func TestMonitorReplayLinksEvents(t *testing.T) {
 	if len(eventsList) == 0 {
 		t.Fatalf("expected events from replay, got none")
 	}
+}
 
-	nameIDs := buildNameIDIndex(messages)
-	for _, event := range eventsList {
-		ids := nameIDs[event.Container]
-		if ids == nil {
-			t.Errorf("event %d uses unknown container name %q", event.ID, event.Container)
-			continue
-		}
-		if _, ok := ids[event.ContainerID]; !ok {
-			t.Errorf("event %d mapped to %q id %q not seen in replay", event.ID, event.Container, event.ContainerID)
-		}
+func readWSUpdate(ctx context.Context, conn *websocket.Conn) (api.EventUpdate, error) {
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, data, err := conn.Read(readCtx)
+	if err != nil {
+		return api.EventUpdate{}, err
 	}
+	var update api.EventUpdate
+	if err := json.Unmarshal(data, &update); err != nil {
+		return api.EventUpdate{}, err
+	}
+	return update, nil
 }
