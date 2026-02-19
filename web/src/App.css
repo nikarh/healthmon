@@ -8,7 +8,8 @@
   --bg-accent: #efece7;
   --bg-card: #ffffff;
   --bg-muted: #faf8f5;
-  --bg-header: #111316;
+  --bg-header: #0b0f14;
+  --bg-header-accent: #1a2330;
   --bg-pill: #f3f4f6;
   --text: #111316;
   --text-muted: #52525b;
@@ -30,7 +31,8 @@
     --bg-accent: #10141c;
     --bg-card: #141821;
     --bg-muted: #10141c;
-    --bg-header: #0b0d12;
+    --bg-header: #05080d;
+    --bg-header-accent: #141b26;
     --bg-pill: #1d2330;
     --text: #e7e4df;
     --text-muted: #9aa3b2;
@@ -75,10 +77,11 @@ body {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  background: var(--bg-header);
+  background: linear-gradient(90deg, var(--bg-header), var(--bg-header-accent));
   color: var(--text-invert);
   border-radius: 0;
   box-shadow: 0 8px 18px var(--shadow);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .title-row {
