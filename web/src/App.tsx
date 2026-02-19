@@ -582,10 +582,7 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
       const appStyle = appElement ? window.getComputedStyle(appElement) : null
       const appPaddingBottom = appStyle ? Number.parseFloat(appStyle.paddingBottom) || 0 : 0
       const viewportHeight = document.documentElement.clientHeight
-      const maxHeight = Math.max(
-        200,
-        viewportHeight - listRect.top - appPaddingBottom - 1,
-      )
+      const maxHeight = Math.max(200, viewportHeight - listRect.top - appPaddingBottom - 1)
       const width = listRect.width
       if (!maxHeight || !width) return
       setListSize({ width, maxHeight })
