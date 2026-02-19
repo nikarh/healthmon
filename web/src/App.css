@@ -65,7 +65,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 12px 16px 20px;
+  padding: 12px 16px 12px;
   min-height: 100dvh;
 }
 
@@ -86,7 +86,6 @@ body {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1;
 }
 
 .title-stack {
@@ -151,7 +150,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1;
+  min-height: 0;
 }
 
 .view-tabs {
@@ -336,9 +335,10 @@ body {
 }
 
 .event-dot {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+  margin-top: 4px;
 }
 
 .sev-red {
@@ -444,6 +444,7 @@ body {
   padding-right: 0;
   min-height: 0;
   margin: 0;
+  flex: 1;
 }
 
 .event-row {
@@ -535,6 +536,8 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 
 .event-meta {

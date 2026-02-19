@@ -577,9 +577,18 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
     if (!element) return undefined
 
     const updateSize = () => {
-      const rect = element.getBoundingClientRect()
-      const maxHeight = Math.max(200, window.innerHeight - rect.top)
-      setListSize({ width: rect.width, maxHeight })
+      const listRect = element.getBoundingClientRect()
+      const appElement = element.closest('.app')
+      const appStyle = appElement ? window.getComputedStyle(appElement) : null
+      const appPaddingBottom = appStyle ? Number.parseFloat(appStyle.paddingBottom) || 0 : 0
+      const viewportHeight = document.documentElement.clientHeight
+      const maxHeight = Math.max(
+        200,
+        viewportHeight - listRect.top - appPaddingBottom - 1,
+      )
+      const width = listRect.width
+      if (!maxHeight || !width) return
+      setListSize({ width, maxHeight })
     }
 
     updateSize()
