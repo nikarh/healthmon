@@ -441,6 +441,7 @@ body {
   padding-right: 0;
   height: min(70vh, 720px);
   min-height: 320px;
+  margin: 0 -10px;
 }
 
 .event-row {
@@ -529,7 +530,7 @@ body {
   background: var(--bg-card);
   border-radius: 18px;
   border: 1px solid var(--border);
-  padding: 14px;
+  padding: 14px 10px;
 }
 
 .event-meta {
@@ -660,5 +661,15 @@ body {
 
   .title-mobile {
     display: inline;
+  }
+
+  .events-feed {
+    padding: 12px 6px;
+  }
+
+  .feed-list {
+    height: calc(100dvh - 220px);
+    min-height: 0;
+    margin: 0 -6px;
   }
 }
