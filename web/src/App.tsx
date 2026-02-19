@@ -553,35 +553,34 @@ function ContainerRow({
             </div>
           </div>
 
-          <div className="events">
-            <div className="events-header">
-              <h3>Events</h3>
-              <span>{events.length} loaded</span>
-            </div>
-            <div className="event-list">
-              {events.map((event) => (
-                <div key={event.id} className="event-row event-row-compact">
-                  <div className={`event-dot ${severityClass(event.severity)}`} />
-                  <div className="event-body">
-                    <div className="event-top">
-                      <span className="event-title">{deriveEventTitle(event)}</span>
-                      <span className="event-time">{formatDate(event.timestamp)}</span>
+          {(events.length > 0 || page.loading || !page.done) && (
+            <div className="events">
+              <div className="events-header">
+                <h3>Events</h3>
+                <span>{events.length} loaded</span>
+              </div>
+              <div className="event-list">
+                {events.map((event) => (
+                  <div key={event.id} className="event-row event-row-compact">
+                    <div className={`event-dot ${severityClass(event.severity)}`} />
+                    <div className="event-body">
+                      <div className="event-top">
+                        <span className="event-title">{deriveEventTitle(event)}</span>
+                        <span className="event-time">{formatDate(event.timestamp)}</span>
+                      </div>
+                      <div className="event-identity">{deriveContainerLine(event)}</div>
+                      {(() => {
+                        const changeLine = deriveChangeLine(event)
+                        return changeLine ? <div className="event-change">{changeLine}</div> : null
+                      })()}
                     </div>
-                    <div className="event-identity">{deriveContainerLine(event)}</div>
-                    {(() => {
-                      const changeLine = deriveChangeLine(event)
-                      return changeLine ? <div className="event-change">{changeLine}</div> : null
-                    })()}
                   </div>
-                </div>
-              ))}
-              {!page.done && <div ref={sentinelRef} className="event-sentinel" />}
+                ))}
+                {!page.done && <div ref={sentinelRef} className="event-sentinel" />}
+              </div>
+              {page.loading && <div className="loading">Loading more events…</div>}
             </div>
-            {page.loading && <div className="loading">Loading more events…</div>}
-            {page.done && events.length === 0 && (
-              <div className="empty">No events recorded yet.</div>
-            )}
-          </div>
+          )}
         </div>
       )}
     </article>
