@@ -232,6 +232,7 @@ type ContainerResponse struct {
 	ReadOnly    bool           `json:"read_only"`
 	User        string         `json:"user"`
 	LastEvent   *EventResponse `json:"last_event"`
+	Present     bool           `json:"present"`
 }
 
 type EventResponse struct {
@@ -272,6 +273,7 @@ func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerR
 		ReadOnly:    c.ReadOnly,
 		User:        c.User,
 		LastEvent:   lastEvent,
+		Present:     c.Present,
 	}
 }
 

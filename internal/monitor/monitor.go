@@ -142,6 +142,7 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 		m.handleRename(ctx, msg, name)
 	case msg.Action == "destroy" || msg.Action == "remove" || msg.Action == "rm":
 		_ = m.store.SetContainerPresent(ctx, name, false)
+		m.server.Broadcast(ctx, api.EventUpdate{Container: api.ContainerResponse{Name: name, Present: false}})
 	}
 }
 
@@ -382,6 +383,7 @@ func (m *Monitor) emit(ctx context.Context, e store.Event) {
 			ReadOnly:    container.ReadOnly,
 			User:        container.User,
 			LastEvent:   &api.EventResponse{ID: id, Type: e.Type, Severity: e.Severity, Message: e.Message, Timestamp: e.Timestamp.UTC().Format("2006-01-02T15:04:05Z")},
+			Present:     container.Present,
 		},
 		Event: api.EventResponse{
 			ID:          e.ID,

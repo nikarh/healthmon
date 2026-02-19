@@ -19,6 +19,7 @@ interface Container {
   read_only: boolean
   user: string
   last_event: EventItem | null
+  present: boolean
 }
 
 interface EventItem {
@@ -267,7 +268,6 @@ export default function App() {
   )
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load on mount
     void loadContainers()
   }, [loadContainers])
 
@@ -278,6 +278,27 @@ export default function App() {
     ws.onmessage = (event) => {
       if (typeof event.data !== 'string') return
       const update = JSON.parse(event.data) as EventUpdate
+      if (!update.container.present) {
+        const name = update.container.name
+        setContainers((prev) => prev.filter((item) => item.name !== name))
+        setExpanded((prev) => {
+          const { [name]: removed, ...rest } = prev
+          void removed
+          return rest
+        })
+        setEvents((prev) => {
+          const { [name]: removed, ...rest } = prev
+          void removed
+          return rest
+        })
+        setFlash((prev) => {
+          const { [name]: removed, ...rest } = prev
+          void removed
+          return rest
+        })
+        return
+      }
+
       setContainers((prev) => {
         const existing = prev.find((item) => item.name === update.container.name)
         if (!existing) {
@@ -291,20 +312,22 @@ export default function App() {
         setFlash((prev) => ({ ...prev, [update.container.name]: false }))
       }, 800)
 
-      setEvents((prev) => {
-        if (!(expanded[update.container.name] ?? false)) return prev
-        const current = prev[update.container.name] ?? []
-        if (current.some((item) => item.id === update.event.id)) return prev
-        return {
-          ...prev,
-          [update.container.name]: [update.event, ...current],
-        }
-      })
+      if (update.event.id > 0) {
+        setEvents((prev) => {
+          if (!(expanded[update.container.name] ?? false)) return prev
+          const current = prev[update.container.name] ?? []
+          if (current.some((item) => item.id === update.event.id)) return prev
+          return {
+            ...prev,
+            [update.container.name]: [update.event, ...current],
+          }
+        })
 
-      setAllEvents((prev) => {
-        if (prev.some((item) => item.id === update.event.id)) return prev
-        return [update.event, ...prev]
-      })
+        setAllEvents((prev) => {
+          if (prev.some((item) => item.id === update.event.id)) return prev
+          return [update.event, ...prev]
+        })
+      }
     }
 
     return () => {
