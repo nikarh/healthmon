@@ -2,10 +2,9 @@
 
 
 ## CHORE
-- v0.2.1
+- v0.2.2
 
 
 ## FIXES
-- remove border on last event row
-- account for section padding in events height
+- move details spacing to events
 
