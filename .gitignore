@@ -15,3 +15,5 @@
 # Misc
 .env
 .DS_Store
+healthmon-events.jsonl
+healthmon-inspects.jsonl
