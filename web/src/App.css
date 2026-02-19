@@ -369,7 +369,7 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 14px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 .details-grid h3 {
@@ -423,6 +423,7 @@ body {
   border-radius: 14px;
   padding: 0;
   border: 1px solid var(--border);
+  margin-top: 14px;
 }
 
 .events-header {
