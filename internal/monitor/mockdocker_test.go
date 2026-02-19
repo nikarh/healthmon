@@ -261,11 +261,19 @@ func buildNameIDIndex(messages []events.Message) map[string]map[string]struct{} 
 func resolveReplayPaths() (string, string, error) {
 	eventsPath := os.Getenv("TEST_DOCKER_EVENTS")
 	if eventsPath == "" {
-		eventsPath = "healthmon-events.jsonl"
+		scenario := os.Getenv("TEST_DOCKER_SCENARIO")
+		if scenario == "" {
+			scenario = "basic"
+		}
+		eventsPath = filepath.Join("testdata", "dumps", fmt.Sprintf("%s.events.jsonl", scenario))
 	}
 	inspectsPath := os.Getenv("TEST_DOCKER_INSPECTS")
 	if inspectsPath == "" {
-		inspectsPath = "healthmon-inspects.jsonl"
+		scenario := os.Getenv("TEST_DOCKER_SCENARIO")
+		if scenario == "" {
+			scenario = "basic"
+		}
+		inspectsPath = filepath.Join("testdata", "dumps", fmt.Sprintf("%s.inspects.jsonl", scenario))
 	}
 	if _, err := os.Stat(eventsPath); err != nil {
 		return "", "", err
