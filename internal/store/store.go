@@ -62,7 +62,47 @@ func (s *Store) Load(ctx context.Context) error {
 		container := c
 		s.containers[container.Name] = &container
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if err := s.repairEventAssociations(ctx); err != nil {
+		return err
+	}
+
+	if err := s.refreshLastEventIDs(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) repairEventAssociations(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE events
+SET container_pk = (SELECT id FROM containers WHERE container_id = events.container_id),
+    container_name = (SELECT name FROM containers WHERE container_id = events.container_id)
+WHERE container_id IN (SELECT container_id FROM containers)
+  AND container_pk != (SELECT id FROM containers WHERE container_id = events.container_id)
+`)
+	return err
+}
+
+func (s *Store) refreshLastEventIDs(ctx context.Context) error {
+	for name, c := range s.containers {
+		latestID, err := s.latestEventID(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+		c.LastEventID = latestID
+		_, _ = s.db.ExecContext(ctx, `UPDATE containers SET last_event_id = ? WHERE id = ?`, nullInt(latestID), c.ID)
+		if latestID > 0 {
+			if evt, ok, _ := s.GetEvent(ctx, latestID); ok {
+				c.UpdatedAt = evt.Timestamp
+			}
+		}
+		s.containers[name] = c
+	}
+	return nil
 }
 
 func (s *Store) ListContainers() []Container {
