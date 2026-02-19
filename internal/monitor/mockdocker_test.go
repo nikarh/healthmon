@@ -322,7 +322,7 @@ func startMonitorWithReplay(t *testing.T, events []events.Message, inspects []in
 		t.Fatalf("load store: %v", err)
 	}
 
-	srv := api.NewServer(st, api.NewBroadcaster())
+	srv := api.NewServer(st, api.NewBroadcaster(), api.WSOptions{})
 	httpServer := httptest.NewServer(srv.Routes())
 	mon := New(config.Config{
 		DockerHost:           host,

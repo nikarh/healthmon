@@ -43,7 +43,10 @@ func main() {
 	}
 
 	broadcaster := api.NewBroadcaster()
-	server := api.NewServer(st, broadcaster)
+	server := api.NewServer(st, broadcaster, api.WSOptions{
+		OriginPatterns:     cfg.WSOriginPatterns,
+		InsecureSkipVerify: cfg.WSInsecureSkipVerify,
+	})
 	if hasWebDist {
 		staticFS, err := fs.Sub(webDist, "web/dist")
 		if err != nil {

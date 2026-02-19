@@ -15,9 +15,15 @@ type Config struct {
 	TelegramChatID       string
 	RestartWindowSeconds int
 	RestartThreshold     int
+	WSOriginPatterns     []string
+	WSInsecureSkipVerify bool
 }
 
 func Load() Config {
+	origins := parseCSV(getEnv("HM_WS_ORIGINS", ""))
+	if len(origins) == 0 {
+		origins = defaultWSOriginPatterns()
+	}
 	return Config{
 		DBPath:               getEnv("HM_DB_PATH", "./healthmon.db"),
 		DockerHost:           getEnv("HM_DOCKER_HOST", "unix:///var/run/docker.sock"),
@@ -27,6 +33,8 @@ func Load() Config {
 		TelegramChatID:       os.Getenv("HM_TG_CHAT_ID"),
 		RestartWindowSeconds: getEnvInt("HM_RESTART_WINDOW_SECONDS", 300),
 		RestartThreshold:     getEnvInt("HM_RESTART_THRESHOLD", 3),
+		WSOriginPatterns:     origins,
+		WSInsecureSkipVerify: getEnvBool("HM_WS_INSECURE_SKIP_VERIFY", false),
 	}
 }
 
@@ -63,4 +71,20 @@ func getEnvBool(key string, def bool) bool {
 	default:
 		return def
 	}
+}
+
+func parseCSV(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }

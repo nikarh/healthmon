@@ -20,10 +20,16 @@ type Server struct {
 	store       *store.Store
 	broadcaster *Broadcaster
 	staticFS    http.FileSystem
+	wsOptions   WSOptions
 }
 
-func NewServer(store *store.Store, broadcaster *Broadcaster) *Server {
-	return &Server{store: store, broadcaster: broadcaster}
+type WSOptions struct {
+	OriginPatterns     []string
+	InsecureSkipVerify bool
+}
+
+func NewServer(store *store.Store, broadcaster *Broadcaster, wsOptions WSOptions) *Server {
+	return &Server{store: store, broadcaster: broadcaster, wsOptions: wsOptions}
 }
 
 func (s *Server) WithStatic(fs http.FileSystem) {
@@ -175,7 +181,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns:     s.wsOptions.OriginPatterns,
+		InsecureSkipVerify: s.wsOptions.InsecureSkipVerify,
+	})
 	if err != nil {
 		return
 	}
