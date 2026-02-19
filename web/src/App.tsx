@@ -640,11 +640,13 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
 
     const updateSize = () => {
       const listRect = element.getBoundingClientRect()
-      const appElement = element.closest('.app')
-      const appStyle = appElement ? window.getComputedStyle(appElement) : null
-      const appPaddingBottom = appStyle ? Number.parseFloat(appStyle.paddingBottom) || 0 : 0
+      const sectionElement = element.closest('.container-list')
+      const sectionStyle = sectionElement ? window.getComputedStyle(sectionElement) : null
+      const sectionPaddingBottom = sectionStyle
+        ? Number.parseFloat(sectionStyle.paddingBottom) || 0
+        : 0
       const viewportHeight = document.documentElement.clientHeight
-      const maxHeight = Math.max(200, viewportHeight - listRect.top - appPaddingBottom - 1)
+      const maxHeight = Math.max(200, viewportHeight - listRect.top - sectionPaddingBottom - 1)
       const width = listRect.width
       if (!maxHeight || !width) return
       setListSize({ width, maxHeight })
