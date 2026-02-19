@@ -512,8 +512,8 @@ function ContainerRow({
             <span>First seen: {formatDate(container.first_seen_at)}</span>
           </div>
         </div>
-        <div className="last-event">
-          {container.last_event && (
+        {container.last_event && (
+          <div className="last-event">
             <div className="event-summary">
               <span className={`event-dot ${severityClass(container.last_event.severity)}`} />
               <div>
@@ -521,8 +521,8 @@ function ContainerRow({
                 <div className="event-message">{container.last_event.message}</div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </button>
 
       {expanded && (
