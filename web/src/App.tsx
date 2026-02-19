@@ -1,7 +1,6 @@
 import type { CSSProperties } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AutoSizer } from 'react-virtualized-auto-sizer'
-import { List } from 'react-window'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { List, useDynamicRowHeight } from 'react-window'
 import logoUrl from './assets/logo.svg'
 import './App.css'
 
@@ -556,6 +555,9 @@ interface AllEventsProps {
 }
 
 function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsProps) {
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 136 })
+  const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
   const handleItemsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
       if (page.loading || page.done || error) return
@@ -566,10 +568,49 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
     [events.length, onLoadMore, page.done, page.loading, error],
   )
 
+  const handleRowMeasured = useCallback(() => {
+    setListSize((prev) => ({ ...prev }))
+  }, [])
+
+  useLayoutEffect(() => {
+    const element = listRef.current
+    if (!element) return undefined
+
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect()
+      const maxHeight = Math.max(200, window.innerHeight - rect.top)
+      setListSize({ width: rect.width, maxHeight })
+    }
+
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(element)
+    window.addEventListener('resize', updateSize)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateSize)
+    }
+  }, [])
+
+  const listHeight = useMemo(() => {
+    if (events.length === 0 || listSize.maxHeight === 0) return 0
+    const average = rowHeight.getAverageRowHeight() || 136
+    let total = 0
+    for (let index = 0; index < events.length; index += 1) {
+      total += rowHeight.getRowHeight(index) ?? average
+      if (total >= listSize.maxHeight) {
+        return listSize.maxHeight
+      }
+    }
+    return Math.min(total, listSize.maxHeight)
+  }, [events.length, listSize.maxHeight, rowHeight])
+
   const rowComponent = useCallback(
     ({
       index,
       style,
+      ariaAttributes,
     }: {
       index: number
       style: CSSProperties
@@ -578,41 +619,17 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
         'aria-setsize': number
         role: 'listitem'
       }
-    }) => {
-      const event = events[index]
-      return (
-        <div
-          style={style}
-          className={`event-row feed-row ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'}`}
-        >
-          <div className={`event-dot ${severityClass(event.severity)}`} />
-          <div className="event-body">
-            <div className="event-top">
-              <span className="event-type">{event.type}</span>
-              <span className="event-time">{formatDate(event.timestamp)}</span>
-            </div>
-            <div className="event-message clamp" title={event.message}>
-              {event.message}
-            </div>
-            <div className="event-meta">
-              <span className="event-container">{event.container}</span>
-              {event.container_id && (
-                <span className="event-id" title={event.container_id}>
-                  {shortId(event.container_id)}
-                </span>
-              )}
-            </div>
-            {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
-            {(event.old_image || event.new_image) && (
-              <div className="event-change">
-                {event.old_image} → {event.new_image}
-              </div>
-            )}
-          </div>
-        </div>
-      )
-    },
-    [events],
+    }) => (
+      <EventRow
+        index={index}
+        style={style}
+        ariaAttributes={ariaAttributes}
+        events={events}
+        onMeasured={handleRowMeasured}
+        rowHeight={rowHeight}
+      />
+    ),
+    [events, handleRowMeasured, rowHeight],
   )
 
   return (
@@ -621,25 +638,18 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
         <h3>All events</h3>
         <span>{events.length} loaded</span>
       </div>
-      <div className="event-list feed-list">
-        {events.length > 0 && (
-          <AutoSizer
-            renderProp={({ height, width }) => {
-              if (!height || !width) return null
-              return (
-                <List
-                  style={{ height, width }}
-                  rowCount={events.length}
-                  rowHeight={136}
-                  rowComponent={rowComponent}
-                  rowProps={{}}
-                  onRowsRendered={({ stopIndex }) => {
-                    handleItemsRendered({ stopIndex })
-                  }}
-                  overscanCount={4}
-                />
-              )
+      <div ref={listRef} className="event-list feed-list">
+        {events.length > 0 && listHeight > 0 && listSize.width > 0 && (
+          <List
+            style={{ height: listHeight, width: listSize.width }}
+            rowCount={events.length}
+            rowHeight={rowHeight}
+            rowComponent={rowComponent}
+            rowProps={{}}
+            onRowsRendered={({ stopIndex }) => {
+              handleItemsRendered({ stopIndex })
             }}
+            overscanCount={4}
           />
         )}
       </div>
@@ -655,6 +665,71 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
       {page.done && !error && events.length === 0 && (
         <div className="empty">No events recorded yet.</div>
       )}
+    </div>
+  )
+}
+
+interface EventRowProps {
+  index: number
+  style: CSSProperties
+  ariaAttributes: {
+    'aria-posinset': number
+    'aria-setsize': number
+    role: 'listitem'
+  }
+  events: EventItem[]
+  onMeasured: () => void
+  rowHeight: ReturnType<typeof useDynamicRowHeight>
+}
+
+function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight }: EventRowProps) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const notifiedRef = useRef(false)
+
+  useLayoutEffect(() => {
+    if (!ref.current) return undefined
+    const cleanup = rowHeight.observeRowElements([ref.current])
+    if (!notifiedRef.current) {
+      notifiedRef.current = true
+      onMeasured()
+    }
+    return cleanup
+  }, [rowHeight, onMeasured])
+
+  const event = events[index]
+  return (
+    <div
+      ref={ref}
+      role={ariaAttributes.role}
+      aria-posinset={ariaAttributes['aria-posinset']}
+      aria-setsize={ariaAttributes['aria-setsize']}
+      style={style}
+      className={`event-row feed-row ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'}`}
+    >
+      <div className={`event-dot ${severityClass(event.severity)}`} />
+      <div className="event-body">
+        <div className="event-top">
+          <span className="event-type">{event.type}</span>
+          <span className="event-time">{formatDate(event.timestamp)}</span>
+        </div>
+        <div className="event-message clamp" title={event.message}>
+          {event.message}
+        </div>
+        <div className="event-meta">
+          <span className="event-container">{event.container}</span>
+          {event.container_id && (
+            <span className="event-id" title={event.container_id}>
+              {shortId(event.container_id)}
+            </span>
+          )}
+        </div>
+        {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
+        {(event.old_image || event.new_image) && (
+          <div className="event-change">
+            {event.old_image} → {event.new_image}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

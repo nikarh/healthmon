@@ -423,15 +423,15 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
   font-size: 13px;
   color: var(--text-muted);
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
 }
 
 .event-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   max-height: 360px;
   overflow: auto;
   padding-right: 4px;
@@ -440,9 +440,8 @@ body {
 .feed-list {
   max-height: none;
   overflow: hidden;
-  padding-right: 2px;
-  height: min(70vh, 720px);
-  min-height: 320px;
+  padding-right: 0;
+  min-height: 0;
   margin: 0;
 }
 
@@ -452,7 +451,7 @@ body {
 }
 
 .feed-row {
-  padding: 8px 14px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -532,7 +531,9 @@ body {
   background: var(--bg-card);
   border-radius: 18px;
   border: 1px solid var(--border);
-  padding: 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .event-meta {
@@ -666,16 +667,19 @@ body {
   }
 
   .events-feed {
-    padding: 12px;
+    border-radius: 14px;
   }
 
   .feed-list {
-    height: calc(100dvh - 220px);
     min-height: 0;
     margin: 0;
   }
 
   .feed-row {
-    padding: 8px 12px;
+    padding: 10px 12px;
+  }
+
+  .events-header {
+    padding: 12px;
   }
 }
