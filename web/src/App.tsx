@@ -513,7 +513,7 @@ function ContainerRow({
           </div>
         </div>
         <div className="last-event">
-          {container.last_event ? (
+          {container.last_event && (
             <div className="event-summary">
               <span className={`event-dot ${severityClass(container.last_event.severity)}`} />
               <div>
@@ -521,8 +521,6 @@ function ContainerRow({
                 <div className="event-message">{container.last_event.message}</div>
               </div>
             </div>
-          ) : (
-            <div className="event-summary empty">No events yet</div>
           )}
         </div>
       </button>
