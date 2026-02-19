@@ -86,6 +86,44 @@ const shortId = (val: string, max = 12) => {
   return `${val.slice(0, max)}…`
 }
 
+const toTitle = (val: string) => {
+  if (!val) return ''
+  return val.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase()
+}
+
+const singleWord = (val: string) => {
+  if (!val) return ''
+  const cleaned = val.trim()
+  if (!cleaned) return ''
+  return /\s/.test(cleaned) ? '' : cleaned
+}
+
+const deriveEventTitle = (event: EventItem) => {
+  const reason = singleWord(event.reason)
+  if (reason) return toTitle(reason)
+  const type = singleWord(event.type)
+  if (type) return toTitle(type)
+  if (event.type) return toTitle(event.type)
+  return 'EVENT'
+}
+
+const deriveChangeLine = (event: EventItem) => {
+  if (event.old_image || event.new_image) {
+    return `${event.old_image} → ${event.new_image}`.trim()
+  }
+  const message = event.message || ''
+  if (!message) return ''
+  if (message.includes('->')) {
+    return message
+  }
+  const regex = /from\\s+(.+?)\\s+to\\s+(.+)/i
+  const match = regex.exec(message)
+  if (match) {
+    return `${match[1]} → ${match[2]}`
+  }
+  return ''
+}
+
 export default function App() {
   const [containers, setContainers] = useState<Container[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean | undefined>>({})
@@ -703,6 +741,9 @@ function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight 
   }, [rowHeight, onMeasured])
 
   const event = events[index]
+  const isLast = index === events.length - 1
+  const title = deriveEventTitle(event)
+  const changeLine = deriveChangeLine(event)
   return (
     <div
       ref={ref}
@@ -710,31 +751,25 @@ function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight 
       aria-posinset={ariaAttributes['aria-posinset']}
       aria-setsize={ariaAttributes['aria-setsize']}
       style={style}
-      className={`event-row feed-row ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'}`}
+      className={`event-row feed-row ${
+        isLast ? '' : index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'
+      }`}
     >
       <div className={`event-dot ${severityClass(event.severity)}`} />
       <div className="event-body">
         <div className="event-top">
-          <span className="event-type">{event.type}</span>
+          <span className="event-title">{title}</span>
           <span className="event-time">{formatDate(event.timestamp)}</span>
         </div>
-        <div className="event-message clamp" title={event.message}>
-          {event.message}
-        </div>
-        <div className="event-meta">
+        <div className="event-identity">
           <span className="event-container">{event.container}</span>
           {event.container_id && (
             <span className="event-id" title={event.container_id}>
-              {shortId(event.container_id)}
+              ({shortId(event.container_id)})
             </span>
           )}
         </div>
-        {event.reason && <div className="event-reason">Reason: {event.reason}</div>}
-        {(event.old_image || event.new_image) && (
-          <div className="event-change">
-            {event.old_image} → {event.new_image}
-          </div>
-        )}
+        {changeLine && <div className="event-change">{changeLine}</div>}
       </div>
     </div>
   )
