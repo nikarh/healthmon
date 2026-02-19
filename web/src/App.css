@@ -637,6 +637,12 @@ body {
 
   .container-main {
     padding: 12px 12px;
+    align-items: start;
+  }
+
+  .status-dot {
+    align-self: start;
+    margin-top: 4px;
   }
 
   .name-row {
@@ -691,5 +697,13 @@ body {
 
   .events-header {
     padding: 12px;
+  }
+
+  .event-summary {
+    align-items: flex-start;
+  }
+
+  .event-summary .event-dot {
+    margin-top: 4px;
   }
 }
