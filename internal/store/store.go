@@ -192,11 +192,6 @@ func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 	if c.Role == "" {
 		c.Role = "service"
 	}
-	if existing, ok := s.containers[c.Name]; ok {
-		log.Printf("store: upsert name=%s id=%d container_id=%s existing_id=%d existing_container_id=%s", c.Name, c.ID, c.ContainerID, existing.ID, existing.ContainerID)
-	} else {
-		log.Printf("store: upsert name=%s id=%d container_id=%s existing_id=none", c.Name, c.ID, c.ContainerID)
-	}
 	if c.LastEventID == 0 {
 		if existing, ok := s.containers[c.Name]; ok && existing.LastEventID > 0 {
 			c.LastEventID = existing.LastEventID
@@ -242,7 +237,6 @@ RETURNING id
 	if err != nil {
 		return err
 	}
-	log.Printf("store: upsert name=%s returning_id=%d", c.Name, id)
 	copy := c
 	copy.ID = id
 	s.containers[c.Name] = &copy
@@ -250,7 +244,6 @@ RETURNING id
 }
 
 func (s *Store) AddEvent(ctx context.Context, e Event) (int64, error) {
-	log.Printf("store: add event type=%s name=%s id=%s pk=%d", e.Type, e.Container, e.ContainerID, e.ContainerPK)
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO events (container_pk, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -265,9 +258,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	e.ID = id
 	s.mu.Lock()
 	if c, ok := s.containers[e.Container]; ok {
-		if c.ID != e.ContainerPK {
-			log.Printf("store: add event mismatch name=%s map_id=%d event_pk=%d container_id=%s", e.Container, c.ID, e.ContainerPK, e.ContainerID)
-		}
 		c.LastEventID = id
 		c.UpdatedAt = e.Timestamp
 	}
