@@ -14,7 +14,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
 COPY --from=webbuild /app/cmd/healthmon/web/dist ./cmd/healthmon/web/dist
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/healthmon ./cmd/healthmon
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/healthmon ./cmd/healthmon
 
 # Final
 FROM scratch
