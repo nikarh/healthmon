@@ -354,21 +354,25 @@ func (m *Monitor) emitAlert(ctx context.Context, name, id, eventType, message, s
 }
 
 func (m *Monitor) emit(ctx context.Context, e store.Event) {
+	log.Printf("emit: incoming type=%s name=%s id=%s reason=%s", e.Type, e.Container, e.ContainerID, e.Reason)
 	var container store.Container
 	var ok bool
 	if e.ContainerID != "" {
 		container, ok, _ = m.store.GetContainerByContainerID(ctx, e.ContainerID)
+		log.Printf("emit: lookup by id=%s ok=%v -> name=%s pk=%d", e.ContainerID, ok, container.Name, container.ID)
 	}
 	if !ok {
 		container, ok = m.store.GetContainer(e.Container)
+		log.Printf("emit: lookup by name=%s ok=%v -> name=%s pk=%d id=%s", e.Container, ok, container.Name, container.ID, container.ContainerID)
 	}
 	if !ok {
+		log.Printf("emit: drop event, container not found name=%s id=%s", e.Container, e.ContainerID)
 		return
 	}
 
 	e.Container = container.Name
 	e.ContainerPK = container.ID
-	log.Printf("event: type=%s severity=%s container=%s", e.Type, e.Severity, e.Container)
+	log.Printf("event: type=%s severity=%s container=%s, id=%s, pk=%d", e.Type, e.Severity, e.Container, e.ContainerID, e.ContainerPK)
 	id, err := m.store.AddEvent(ctx, e)
 	if err != nil {
 		log.Printf("event persist failed: %v", err)
