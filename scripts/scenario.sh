@@ -13,54 +13,49 @@ container_rm() {
 
 container_rm "${PREFIX}-alpha"
 container_rm "${PREFIX}-bravo"
-container_rm "${PREFIX}-health"
-container_rm "${PREFIX}-task"
+container_rm "${PREFIX}-swap"
 
-# Basic lifecycle
+# Two containers with interleaved lifecycle + rename/recreate.
 
 docker run -d --name "${PREFIX}-alpha" --label "$LABEL" alpine sleep 120 >/dev/null
-sleep 1
-
-docker stop "${PREFIX}-alpha" >/dev/null
-sleep 1
-
-docker start "${PREFIX}-alpha" >/dev/null
-sleep 1
-
-docker kill "${PREFIX}-alpha" >/dev/null
-sleep 1
-
-docker restart "${PREFIX}-alpha" >/dev/null
-sleep 1
-
-# Rename flow
-
-docker rename "${PREFIX}-alpha" "${PREFIX}-bravo"
-sleep 1
-
-# Recreate same name (destroy + create)
-
-docker rm -f "${PREFIX}-bravo" >/dev/null
-sleep 1
+sleep 0.5
 
 docker run -d --name "${PREFIX}-bravo" --label "$LABEL" alpine sleep 120 >/dev/null
-sleep 1
+sleep 0.5
 
-# Health status events
+# Interleaved stop/start to create close event timing.
+(docker stop "${PREFIX}-alpha" >/dev/null &) 
+(docker restart "${PREFIX}-bravo" >/dev/null &)
+wait
+sleep 0.5
 
-docker run -d --name "${PREFIX}-health" --label "$LABEL" \
-  --health-cmd="exit 1" --health-interval=1s --health-retries=1 --health-timeout=1s \
-  alpine sleep 30 >/dev/null
-sleep 3
+# Rename alpha -> swap, then recreate alpha.
 
-docker rm -f "${PREFIX}-health" >/dev/null
-sleep 1
+docker rename "${PREFIX}-alpha" "${PREFIX}-swap"
+sleep 0.5
 
-# One-shot task
+docker run -d --name "${PREFIX}-alpha" --label "$LABEL" alpine sleep 120 >/dev/null
+sleep 0.5
 
-docker run --name "${PREFIX}-task" --label "$LABEL" alpine sh -c "exit 0" >/dev/null
-sleep 1
+# Kill swap and remove, while alpha/bravo still running.
 
-# Final cleanup
+docker kill "${PREFIX}-swap" >/dev/null
+sleep 0.5
+
+docker rm -f "${PREFIX}-swap" >/dev/null
+sleep 0.5
+
+# Recreate bravo to force name reuse with new container id.
+
+docker rm -f "${PREFIX}-bravo" >/dev/null
+sleep 0.5
+
+docker run -d --name "${PREFIX}-bravo" --label "$LABEL" alpine sleep 120 >/dev/null
+sleep 0.5
+
+# Final cleanup.
+
+docker rm -f "${PREFIX}-alpha" >/dev/null
+sleep 0.5
 
 docker rm -f "${PREFIX}-bravo" >/dev/null
