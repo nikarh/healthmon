@@ -17,3 +17,5 @@
 .DS_Store
 healthmon-events.jsonl
 healthmon-inspects.jsonl
+testdata/dumps/*.jsonl
+__pycache__/
