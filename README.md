@@ -27,6 +27,13 @@ Healthmon watches Docker containers via the Docker socket, detects restart loops
 | `HM_RESTART_WINDOW_SECONDS` | `300` | Restart loop window |
 | `HM_RESTART_THRESHOLD` | `3` | Restart loop threshold |
 
+## Container labels
+
+Healthmon can separate always-on services from one-shot tasks in the UI.
+
+- `healthmon.role=service` (default): treated as a service.
+- `healthmon.role=task`: treated as a one-shot task/sidecar.
+
 ## Run with Docker
 
 Recommended: use a Docker socket proxy like https://github.com/11notes/docker-socket-proxy instead of mounting the raw socket.
@@ -137,6 +144,7 @@ mise run check
 
 - `GET /api/containers` returns all containers with current status and last event.
 - `GET /api/containers/{name}/events?before_id={id}&limit={n}` returns paginated events.
+- `GET /api/events?before_id={id}&limit={n}` returns paginated events across all containers.
 - `GET /api/events/stream` WebSocket pushes live updates.
 
 ## License
