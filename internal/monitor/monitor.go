@@ -106,6 +106,12 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 
 func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 	name := msg.Actor.Attributes["name"]
+	if name == "" && msg.Actor.ID != "" {
+		if container, foundName, ok := m.store.FindContainerByID(msg.Actor.ID); ok {
+			_ = container
+			name = foundName
+		}
+	}
 	if name == "" {
 		return
 	}
@@ -118,11 +124,14 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 	case msg.Action == "start":
 		m.handleStart(ctx, name, msg.Actor.ID)
 	case msg.Action == "die":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "die")
+		exitCode := strings.TrimSpace(msg.Actor.Attributes["exitCode"])
+		if exitCode == "0" {
+			m.handleStop(ctx, name, msg.Actor.ID)
+		} else {
+			m.handleRestartLike(ctx, name, msg.Actor.ID, "die")
+		}
 	case msg.Action == "restart":
 		m.handleRestartLike(ctx, name, msg.Actor.ID, "restart")
-	case msg.Action == "kill":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "kill")
 	case msg.Action == "oom":
 		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom")
 	case strings.HasPrefix(string(msg.Action), "health_status:"):
@@ -241,6 +250,44 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 			info.FirstSeenAt = now
 		}
 		_ = m.store.UpsertContainer(ctx, info)
+		return
+	}
+
+	if existing, ok := m.store.GetContainer(name); ok {
+		existing.Status = "exited"
+		existing.UpdatedAt = now
+		if existing.FirstSeenAt.IsZero() {
+			existing.FirstSeenAt = now
+		}
+		_ = m.store.UpsertContainer(ctx, existing)
+	}
+}
+
+func (m *Monitor) handleStop(ctx context.Context, name, id string) {
+	now := time.Now().UTC()
+	m.emitInfo(ctx, name, id, "stopped", "Container stopped", "", "", "", "", "stop")
+
+	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err == nil {
+		info := m.inspectToContainer(inspect.Container)
+		info.Name = name
+		if existing, ok := m.store.GetContainer(name); ok {
+			info.FirstSeenAt = existing.FirstSeenAt
+		}
+		if info.FirstSeenAt.IsZero() {
+			info.FirstSeenAt = now
+		}
+		_ = m.store.UpsertContainer(ctx, info)
+		return
+	}
+
+	if existing, ok := m.store.GetContainer(name); ok {
+		existing.Status = "exited"
+		existing.UpdatedAt = now
+		if existing.FirstSeenAt.IsZero() {
+			existing.FirstSeenAt = now
+		}
+		_ = m.store.UpsertContainer(ctx, existing)
 	}
 }
 

@@ -620,6 +620,18 @@ func (s *Store) findContainerByID(id string) (*Container, string) {
 	return nil, ""
 }
 
+func (s *Store) FindContainerByID(id string) (Container, string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for name, c := range s.containers {
+		if c.ContainerID == id {
+			copy := *c
+			return copy, name, true
+		}
+	}
+	return Container{}, "", false
+}
+
 func (s *Store) latestEventID(ctx context.Context, containerPK int64) (int64, error) {
 	var id sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `SELECT MAX(id) FROM events WHERE container_pk = ?`, containerPK).Scan(&id); err != nil {

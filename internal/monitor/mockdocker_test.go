@@ -384,7 +384,6 @@ func TestMonitorReplayLinksEvents(t *testing.T) {
 		"create":  {},
 		"start":   {},
 		"die":     {},
-		"kill":    {},
 		"restart": {},
 		"oom":     {},
 	}
