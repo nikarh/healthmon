@@ -225,9 +225,15 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 
 	if has && existing.ContainerID != id {
 		m.restarts.reset(name)
-		newInfo.RestartLoop = false
-		newInfo.RestartStreak = 0
-		newInfo.RestartLoopSince = time.Time{}
+		if existing.RestartLoop {
+			newInfo.RestartLoop = true
+			newInfo.RestartStreak = existing.RestartStreak
+			newInfo.RestartLoopSince = existing.RestartLoopSince
+		} else {
+			newInfo.RestartLoop = false
+			newInfo.RestartStreak = 0
+			newInfo.RestartLoopSince = time.Time{}
+		}
 		imageChanged := existing.ImageID != newInfo.ImageID || existing.ImageTag != newInfo.ImageTag
 		if imageChanged {
 			m.emitInfo(ctx, name, id, "image_changed", fmt.Sprintf("Image changed %s -> %s", existing.Image, newInfo.Image), existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
@@ -294,6 +300,7 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 	}
 	oldName = strings.TrimPrefix(oldName, "/")
 	newName = strings.TrimPrefix(newName, "/")
+	target, hasTarget := m.store.GetContainer(newName)
 
 	inspect, err := m.docker.ContainerInspect(ctx, msg.Actor.ID, client.ContainerInspectOptions{})
 	if err != nil {
@@ -305,6 +312,22 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 		info.RegisteredAt = existing.RegisteredAt
 		info.StartedAt = existing.StartedAt
 		info.LastEventID = existing.LastEventID
+	}
+	// If this rename replaces an older logical container name that was still broken,
+	// preserve the derived bad state until heal timeout marks it recovered.
+	if hasTarget {
+		if target.RestartLoop {
+			info.RestartLoop = true
+			info.RestartLoopSince = target.RestartLoopSince
+			if info.RestartStreak < target.RestartStreak {
+				info.RestartStreak = target.RestartStreak
+			}
+		}
+		if strings.ToLower(target.HealthStatus) == "unhealthy" {
+			info.HealthStatus = target.HealthStatus
+			info.HealthFailingStreak = maxInt(info.HealthFailingStreak, target.HealthFailingStreak)
+			info.UnhealthySince = target.UnhealthySince
+		}
 	}
 	if info.RegisteredAt.IsZero() {
 		info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
@@ -385,6 +408,10 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 
 	inspect, inspectErr := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	hasAutoRestart := inspectErr == nil && hasAutoRestartPolicy(inspect.Container)
+	wasInLoop := false
+	if existing, ok := m.store.GetContainer(name); ok {
+		wasInLoop = existing.RestartLoop
+	}
 	if !hasAutoRestart {
 		m.restarts.reset(name)
 	}
@@ -394,7 +421,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	if hasAutoRestart {
 		streak, enteredLoop = m.restarts.record(name, now)
 	}
-	inLoop := hasAutoRestart && m.restarts.inLoop(name)
+	inLoop := hasAutoRestart && (m.restarts.inLoop(name) || wasInLoop)
 	message := fmt.Sprintf("Restart event: %s", reason)
 	if signal != "" {
 		message = fmt.Sprintf("Restart event: %s (signal %s)", reason, signal)
@@ -426,7 +453,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	if reason == "oom" {
 		m.emitAlert(ctx, name, id, "oom_killed", "Container killed by OOM", "red", exitCode)
 	}
-	if enteredLoop {
+	if enteredLoop && !wasInLoop {
 		details, _ := json.Marshal(map[string]int{"restart_count": streak})
 		m.emitAlertRecord(ctx, store.Alert{
 			Container:   name,
