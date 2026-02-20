@@ -306,7 +306,17 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string, exitCode *int, signal string) {
 	now := time.Now().UTC()
 
-	streak, enteredLoop := m.restarts.record(name, now)
+	inspect, inspectErr := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	hasAutoRestart := inspectErr == nil && hasAutoRestartPolicy(inspect.Container)
+	if !hasAutoRestart {
+		m.restarts.reset(name)
+	}
+
+	streak := 0
+	enteredLoop := false
+	if hasAutoRestart {
+		streak, enteredLoop = m.restarts.record(name, now)
+	}
 	message := fmt.Sprintf("Restart event: %s", reason)
 	if signal != "" {
 		message = fmt.Sprintf("Restart event: %s (signal %s)", reason, signal)
@@ -315,7 +325,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 
 	if c, ok := m.store.GetContainer(name); ok {
 		c.RestartStreak = streak
-		c.RestartLoop = m.restarts.inLoop(name)
+		c.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
 		c.UpdatedAt = now
 		_ = m.store.UpsertContainer(ctx, c)
 	}
@@ -328,15 +338,14 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 		m.emitAlert(ctx, name, id, "restart_loop", message, "red", nil)
 	}
 
-	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
-	if err == nil {
+	if inspectErr == nil {
 		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
 			info.StartedAt = existing.StartedAt
 		}
-		info.RestartLoop = m.restarts.inLoop(name)
+		info.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
 		info.RestartStreak = streak
 		if info.RegisteredAt.IsZero() {
 			info.RegisteredAt = minTime(info.CreatedAt, now)
@@ -775,8 +784,7 @@ func shouldAlertNoRestartPolicyFailure(reason string, exitCode *int, inspect con
 	if inspect.HostConfig == nil {
 		return false
 	}
-	policy := strings.ToLower(strings.TrimSpace(string(inspect.HostConfig.RestartPolicy.Name)))
-	if policy != "" && policy != "no" {
+	if hasAutoRestartPolicy(inspect) {
 		return false
 	}
 	if reason == "oom" {
@@ -786,6 +794,14 @@ func shouldAlertNoRestartPolicyFailure(reason string, exitCode *int, inspect con
 		return false
 	}
 	return *exitCode != 0
+}
+
+func hasAutoRestartPolicy(inspect container.InspectResponse) bool {
+	if inspect.HostConfig == nil {
+		return false
+	}
+	policy := strings.ToLower(strings.TrimSpace(string(inspect.HostConfig.RestartPolicy.Name)))
+	return policy != "" && policy != "no"
 }
 
 func resolveCaps(defaults, add, drop []string) []string {
