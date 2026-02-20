@@ -246,10 +246,7 @@ const deriveDerivedStatus = (container: Container) => {
       severity: 'sev-red',
     }
   }
-  if (health === 'healthy') {
-    return { label: 'Clear', detail: 'Healthy', severity: 'sev-green' }
-  }
-  return { label: 'Clear', detail: 'No healthcheck', severity: 'sev-blue' }
+  return null
 }
 
 export default function App() {
@@ -729,13 +726,15 @@ function ContainerRow({
           </div>
         </div>
         <div className="container-side">
-          <div className="derived-status">
-            <span className={`event-dot ${derivedStatus.severity}`} />
-            <div>
-              <div className="event-type">{derivedStatus.label}</div>
-              <div className="event-message">{derivedStatus.detail}</div>
+          {derivedStatus && (
+            <div className="derived-status">
+              <span className={`event-dot ${derivedStatus.severity}`} />
+              <div>
+                <div className="event-type">{derivedStatus.label}</div>
+                <div className="event-message">{derivedStatus.detail}</div>
+              </div>
             </div>
-          </div>
+          )}
           <div className="started-time">Started: {formatRelativeTime(container.started_at)}</div>
         </div>
       </button>
@@ -767,28 +766,24 @@ function ContainerRow({
               <h3>Capabilities</h3>
               <p className="caps">{container.caps.length ? container.caps.join(', ') : 'none'}</p>
             </div>
-            <div>
-              <h3>Health</h3>
-              <p>Status: {container.health_status || 'none'}</p>
-              <p>Failing streak: {container.health_failing_streak || 0}</p>
-              <p>Restart loop: {container.restart_loop ? 'yes' : 'no'}</p>
-              <p>Restart streak: {container.restart_streak || 0}</p>
-              {container.healthcheck && (
-                <>
-                  <p>Interval: {container.healthcheck.interval || '—'}</p>
-                  <p>Timeout: {container.healthcheck.timeout || '—'}</p>
-                  <p>Start period: {container.healthcheck.start_period || '—'}</p>
-                  <p>Start interval: {container.healthcheck.start_interval || '—'}</p>
-                  <p>Retries: {container.healthcheck.retries}</p>
-                  <p>
-                    Test:{' '}
-                    {container.healthcheck.test.length > 0
-                      ? container.healthcheck.test.join(' ')
-                      : '—'}
-                  </p>
-                </>
-              )}
-            </div>
+            {container.healthcheck && (
+              <div>
+                <h3>Health</h3>
+                <p>Status: {container.health_status || 'none'}</p>
+                <p>Failing streak: {container.health_failing_streak || 0}</p>
+                <p>Interval: {container.healthcheck.interval || '—'}</p>
+                <p>Timeout: {container.healthcheck.timeout || '—'}</p>
+                <p>Start period: {container.healthcheck.start_period || '—'}</p>
+                <p>Start interval: {container.healthcheck.start_interval || '—'}</p>
+                <p>Retries: {container.healthcheck.retries}</p>
+                <p>
+                  Test:{' '}
+                  {container.healthcheck.test.length > 0
+                    ? container.healthcheck.test.join(' ')
+                    : '—'}
+                </p>
+              </div>
+            )}
           </div>
 
           {(events.length > 0 || page.loading || !page.done) && (

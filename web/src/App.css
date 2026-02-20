@@ -652,11 +652,6 @@ body {
   .container-main {
     grid-template-columns: auto 1fr;
   }
-
-  .container-side {
-    grid-column: 1 / -1;
-    min-width: 0;
-  }
 }
 
 @media (max-width: 600px) {
@@ -693,6 +688,15 @@ body {
 
   .meta {
     flex-direction: column;
+  }
+
+  .container-side {
+    grid-column: 2;
+    align-items: flex-start;
+    text-align: left;
+    min-width: 0;
+    width: 100%;
+    gap: 8px;
   }
 
   .truncate-id {
