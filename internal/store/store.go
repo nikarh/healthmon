@@ -673,6 +673,24 @@ LIMIT 1
 	return e, true, nil
 }
 
+func (s *Store) GetLatestRestartTimestampByContainerPK(ctx context.Context, containerPK int64) (time.Time, bool, error) {
+	var ts string
+	err := s.db.QueryRowContext(ctx, `
+SELECT ts
+FROM events
+WHERE container_pk = ? AND event_type = 'restart'
+ORDER BY id DESC
+LIMIT 1
+`, containerPK).Scan(&ts)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return parseTime(ts), true, nil
+}
+
 func (s *Store) ContainerNames() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
