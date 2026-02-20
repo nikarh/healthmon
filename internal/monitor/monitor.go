@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -89,10 +90,15 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
 		if existing, ok := m.store.GetContainer(name); ok {
-			info.FirstSeenAt = existing.FirstSeenAt
+			info.RegisteredAt = existing.RegisteredAt
+			if info.StartedAt.IsZero() {
+				info.StartedAt = existing.StartedAt
+			}
+			info.RestartLoop = existing.RestartLoop
+			info.RestartStreak = existing.RestartStreak
 		}
-		if info.FirstSeenAt.IsZero() {
-			info.FirstSeenAt = time.Now().UTC()
+		if info.RegisteredAt.IsZero() {
+			info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
 		}
 		if err := m.store.UpsertContainer(ctx, info); err != nil {
 			return err
@@ -116,7 +122,12 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 		return
 	}
 	name = strings.TrimPrefix(name, "/")
-	log.Printf("event: container=%s action=%s id=%s", name, msg.Action, msg.Actor.ID)
+	if isHealthcheckExecEvent(msg) {
+		return
+	}
+	if !isHealthcheckStatusEvent(msg) {
+		log.Printf("event: container=%s action=%s id=%s", name, msg.Action, msg.Actor.ID)
+	}
 
 	switch {
 	case msg.Action == "create":
@@ -124,18 +135,21 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 	case msg.Action == "start":
 		m.handleStart(ctx, name, msg.Actor.ID)
 	case msg.Action == "stop":
-		m.handleStop(ctx, name, msg.Actor.ID)
+		exitCode := parseExitCode(msg.Actor.Attributes["exitCode"])
+		m.handleStop(ctx, name, msg.Actor.ID, exitCode)
 	case msg.Action == "die":
-		exitCode := strings.TrimSpace(msg.Actor.Attributes["exitCode"])
-		if exitCode == "" || exitCode == "0" {
-			m.handleStop(ctx, name, msg.Actor.ID)
+		exitCode := parseExitCode(msg.Actor.Attributes["exitCode"])
+		if exitCode == nil || *exitCode == 0 {
+			m.handleStop(ctx, name, msg.Actor.ID, exitCode)
 		} else {
-			m.handleRestartLike(ctx, name, msg.Actor.ID, "die")
+			m.handleRestartLike(ctx, name, msg.Actor.ID, "die", exitCode, "")
 		}
 	case msg.Action == "restart":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "restart")
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "restart", nil, "")
 	case msg.Action == "oom":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom")
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom", nil, "")
+	case msg.Action == "kill":
+		m.handleSignal(ctx, name, msg.Actor.ID, strings.TrimSpace(msg.Actor.Attributes["signal"]))
 	case strings.HasPrefix(string(msg.Action), "health_status:"):
 		m.handleHealth(ctx, name, msg.Actor.ID, strings.TrimSpace(strings.TrimPrefix(string(msg.Action), "health_status:")))
 	case msg.Action == "rename":
@@ -155,25 +169,33 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 	newInfo := m.inspectToContainer(inspect.Container)
 	newInfo.Name = name
 
+	now := time.Now().UTC()
 	existing, has := m.store.GetContainer(name)
 	if has {
-		newInfo.FirstSeenAt = existing.FirstSeenAt
+		newInfo.RegisteredAt = existing.RegisteredAt
+		if newInfo.StartedAt.IsZero() {
+			newInfo.StartedAt = existing.StartedAt
+		}
 	} else {
-		newInfo.FirstSeenAt = time.Now().UTC()
+		newInfo.RegisteredAt = minTime(newInfo.CreatedAt, now)
 	}
 
 	if has && existing.ContainerID != id {
 		m.restarts.reset(name)
+		newInfo.RestartLoop = false
+		newInfo.RestartStreak = 0
 		imageChanged := existing.ImageID != newInfo.ImageID || existing.ImageTag != newInfo.ImageTag
 		if imageChanged {
-			m.emitInfo(ctx, name, id, "image_changed", fmt.Sprintf("Image changed %s -> %s", existing.Image, newInfo.Image), existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate")
+			m.emitInfo(ctx, name, id, "image_changed", fmt.Sprintf("Image changed %s -> %s", existing.Image, newInfo.Image), existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
+			m.emitAlert(ctx, name, id, "image_changed", "Container image updated", "blue", nil)
 		} else {
-			m.emitInfo(ctx, name, id, "recreated", "Container recreated", existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate")
+			m.emitInfo(ctx, name, id, "recreated", "Container recreated", existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
 		}
+		m.emitAlert(ctx, name, id, "recreated", "Container recreated", "blue", nil)
 	}
 
 	_ = m.store.UpsertContainer(ctx, newInfo)
-	m.emitInfo(ctx, name, id, "created", "Container created", "", "", "", "", "create")
+	m.emitInfo(ctx, name, id, "created", "Container created", "", "", "", "", "create", nil)
 }
 
 func (m *Monitor) handleStart(ctx context.Context, name, id string) {
@@ -184,13 +206,19 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 	info := m.inspectToContainer(inspect.Container)
 	info.Name = name
 	if existing, ok := m.store.GetContainer(name); ok {
-		info.FirstSeenAt = existing.FirstSeenAt
+		info.RegisteredAt = existing.RegisteredAt
+		if info.StartedAt.IsZero() {
+			info.StartedAt = existing.StartedAt
+		}
 	}
-	if info.FirstSeenAt.IsZero() {
-		info.FirstSeenAt = time.Now().UTC()
+	if info.RegisteredAt.IsZero() {
+		info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
+	}
+	if info.StartedAt.IsZero() {
+		info.StartedAt = time.Now().UTC()
 	}
 	_ = m.store.UpsertContainer(ctx, info)
-	m.emitInfo(ctx, name, id, "started", "Container started", "", "", "", "", "start")
+	m.emitInfo(ctx, name, id, "started", "Container started", "", "", "", "", "start", nil)
 }
 
 func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName string) {
@@ -211,11 +239,12 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 	info := m.inspectToContainer(inspect.Container)
 	info.Name = newName
 	if existing, ok := m.store.GetContainer(oldName); ok {
-		info.FirstSeenAt = existing.FirstSeenAt
+		info.RegisteredAt = existing.RegisteredAt
+		info.StartedAt = existing.StartedAt
 		info.LastEventID = existing.LastEventID
 	}
-	if info.FirstSeenAt.IsZero() {
-		info.FirstSeenAt = time.Now().UTC()
+	if info.RegisteredAt.IsZero() {
+		info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
 	}
 	m.restarts.reset(oldName)
 	m.restarts.reset(newName)
@@ -223,75 +252,169 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 }
 
 func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
-	if status == "unhealthy" {
-		m.handleRestartLike(ctx, name, id, "health_unhealthy")
-		return
+	status = strings.TrimSpace(strings.ToLower(status))
+	existing, has := m.store.GetContainer(name)
+	prevStatus := ""
+	prevStreak := 0
+	if has {
+		prevStatus = strings.ToLower(existing.HealthStatus)
+		prevStreak = existing.HealthFailingStreak
 	}
-	if status == "healthy" {
-		m.restarts.markHealthy(name)
+
+	if inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{}); err == nil {
+		info := m.inspectToContainer(inspect.Container)
+		info.Name = name
+		if has {
+			info.RegisteredAt = existing.RegisteredAt
+			info.StartedAt = existing.StartedAt
+			info.RestartLoop = existing.RestartLoop
+			info.RestartStreak = existing.RestartStreak
+		}
+		if info.RegisteredAt.IsZero() {
+			info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
+		}
+		_ = m.store.UpsertContainer(ctx, info)
+		status = strings.ToLower(info.HealthStatus)
+		prevStreak = maxInt(prevStreak, info.HealthFailingStreak)
+	} else if has {
+		existing.HealthStatus = status
+		if status == "unhealthy" {
+			existing.HealthFailingStreak = prevStreak + 1
+		} else if status == "healthy" {
+			existing.HealthFailingStreak = 0
+		}
+		existing.UpdatedAt = time.Now().UTC()
+		_ = m.store.UpsertContainer(ctx, existing)
+	}
+
+	switch status {
+	case "unhealthy":
+		if prevStatus != "unhealthy" {
+			m.emitAlert(ctx, name, id, "unhealthy", "Container became unhealthy", "red", nil)
+		}
+	case "healthy":
+		if prevStatus == "unhealthy" || prevStreak > 0 {
+			message := "Container became healthy"
+			if prevStreak > 0 {
+				message = fmt.Sprintf("Container became healthy after %d failed checks", prevStreak)
+			}
+			m.emitAlert(ctx, name, id, "healthy", message, "green", nil)
+		}
 	}
 }
 
-func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string) {
+func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string, exitCode *int, signal string) {
 	now := time.Now().UTC()
 
-	m.restarts.record(name, now)
-	m.emitInfo(ctx, name, id, "restart", fmt.Sprintf("Restart event: %s", reason), "", "", "", "", reason)
-
-	if m.restarts.justEnteredLoop(name) {
-		m.emitAlert(ctx, name, id, "restart_loop", "Restart loop detected", "red")
+	inspect, inspectErr := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	hasAutoRestart := inspectErr == nil && hasAutoRestartPolicy(inspect.Container)
+	if !hasAutoRestart {
+		m.restarts.reset(name)
 	}
 
-	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
-	if err == nil {
+	streak := 0
+	enteredLoop := false
+	if hasAutoRestart {
+		streak, enteredLoop = m.restarts.record(name, now)
+	}
+	message := fmt.Sprintf("Restart event: %s", reason)
+	if signal != "" {
+		message = fmt.Sprintf("Restart event: %s (signal %s)", reason, signal)
+	}
+	m.emitInfo(ctx, name, id, "restart", message, "", "", "", "", reason, exitCode)
+
+	if c, ok := m.store.GetContainer(name); ok {
+		c.RestartStreak = streak
+		c.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
+		c.UpdatedAt = now
+		_ = m.store.UpsertContainer(ctx, c)
+	}
+
+	if reason == "oom" {
+		m.emitAlert(ctx, name, id, "oom_killed", "Container killed by OOM", "red", exitCode)
+	}
+	if enteredLoop {
+		message := fmt.Sprintf("Restart loop detected (%d restarts)", streak)
+		m.emitAlert(ctx, name, id, "restart_loop", message, "red", nil)
+	}
+
+	if inspectErr == nil {
 		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
 		if existing, ok := m.store.GetContainer(name); ok {
-			info.FirstSeenAt = existing.FirstSeenAt
+			info.RegisteredAt = existing.RegisteredAt
+			info.StartedAt = existing.StartedAt
 		}
-		if info.FirstSeenAt.IsZero() {
-			info.FirstSeenAt = now
+		info.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
+		info.RestartStreak = streak
+		if info.RegisteredAt.IsZero() {
+			info.RegisteredAt = minTime(info.CreatedAt, now)
+		}
+		if info.StartedAt.IsZero() {
+			info.StartedAt = now
 		}
 		_ = m.store.UpsertContainer(ctx, info)
+		if shouldAlertNoRestartPolicyFailure(reason, exitCode, inspect.Container) {
+			m.emitAlert(ctx, name, id, "failure_no_restart", "Container failed without restart policy", "red", exitCode)
+		}
 		return
 	}
 
 	if existing, ok := m.store.GetContainer(name); ok {
 		existing.Status = "exited"
 		existing.UpdatedAt = now
-		if existing.FirstSeenAt.IsZero() {
-			existing.FirstSeenAt = now
+		if existing.RegisteredAt.IsZero() {
+			existing.RegisteredAt = minTime(existing.CreatedAt, now)
 		}
 		_ = m.store.UpsertContainer(ctx, existing)
 	}
 }
 
-func (m *Monitor) handleStop(ctx context.Context, name, id string) {
+func (m *Monitor) handleStop(ctx context.Context, name, id string, exitCode *int) {
 	now := time.Now().UTC()
-	m.emitInfo(ctx, name, id, "stopped", "Container stopped", "", "", "", "", "stop")
+	m.emitInfo(ctx, name, id, "stopped", "Container stopped", "", "", "", "", "stop", exitCode)
 
 	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err == nil {
 		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
 		if existing, ok := m.store.GetContainer(name); ok {
-			info.FirstSeenAt = existing.FirstSeenAt
+			info.RegisteredAt = existing.RegisteredAt
+			info.StartedAt = existing.StartedAt
+			info.RestartLoop = existing.RestartLoop
+			info.RestartStreak = existing.RestartStreak
 		}
-		if info.FirstSeenAt.IsZero() {
-			info.FirstSeenAt = now
+		if info.RegisteredAt.IsZero() {
+			info.RegisteredAt = minTime(info.CreatedAt, now)
+		}
+		if info.StartedAt.IsZero() {
+			info.StartedAt = now
 		}
 		_ = m.store.UpsertContainer(ctx, info)
+		if shouldAlertNoRestartPolicyFailure("stop", exitCode, inspect.Container) {
+			m.emitAlert(ctx, name, id, "failure_no_restart", "Container failed without restart policy", "red", exitCode)
+		}
 		return
 	}
 
 	if existing, ok := m.store.GetContainer(name); ok {
 		existing.Status = "exited"
 		existing.UpdatedAt = now
-		if existing.FirstSeenAt.IsZero() {
-			existing.FirstSeenAt = now
+		if existing.RegisteredAt.IsZero() {
+			existing.RegisteredAt = minTime(existing.CreatedAt, now)
 		}
 		_ = m.store.UpsertContainer(ctx, existing)
 	}
+}
+
+func (m *Monitor) handleSignal(ctx context.Context, name, id, signal string) {
+	message := "Signal sent"
+	reason := "signal"
+	if signal != "" {
+		message = fmt.Sprintf("Signal sent: %s", signal)
+		reason = fmt.Sprintf("signal_%s", strings.ToLower(signal))
+	}
+	m.emitInfo(ctx, name, id, "signal", message, "", "", "", "", reason, nil)
 }
 
 func (m *Monitor) watchHeals(ctx context.Context) {
@@ -319,15 +442,24 @@ func (m *Monitor) checkHeals(ctx context.Context) {
 		}
 		if c, ok := m.store.GetContainer(name); ok {
 			if strings.ToLower(c.Status) == "running" {
+				streak := c.RestartStreak
+				c.RestartLoop = false
+				c.RestartStreak = 0
+				c.UpdatedAt = now
+				_ = m.store.UpsertContainer(ctx, c)
 				m.restarts.markHealed(name)
-				m.emitAlert(ctx, name, c.ContainerID, "restart_healed", "Restart loop healed", "green")
+				message := "Restart loop healed"
+				if streak > 0 {
+					message = fmt.Sprintf("Restart loop healed after %d restarts", streak)
+				}
+				m.emitAlert(ctx, name, c.ContainerID, "restart_healed", message, "green", nil)
 			}
 		}
 	}
 }
 
-func (m *Monitor) emitInfo(ctx context.Context, name, id, eventType, message, oldImage, newImage, oldImageID, newImageID, reason string) {
-	m.emit(ctx, store.Event{
+func (m *Monitor) emitInfo(ctx context.Context, name, id, eventType, message, oldImage, newImage, oldImageID, newImageID, reason string, exitCode *int) {
+	m.emitEvent(ctx, store.Event{
 		Container:   name,
 		ContainerID: id,
 		Type:        eventType,
@@ -339,21 +471,24 @@ func (m *Monitor) emitInfo(ctx context.Context, name, id, eventType, message, ol
 		OldImageID:  oldImageID,
 		NewImageID:  newImageID,
 		Reason:      reason,
+		ExitCode:    exitCode,
 	})
 }
 
-func (m *Monitor) emitAlert(ctx context.Context, name, id, eventType, message, severity string) {
-	m.emit(ctx, store.Event{
+func (m *Monitor) emitAlert(ctx context.Context, name, id, alertType, message, severity string, exitCode *int) {
+	alert := store.Alert{
 		Container:   name,
 		ContainerID: id,
-		Type:        eventType,
+		Type:        alertType,
 		Severity:    severity,
 		Message:     message,
 		Timestamp:   time.Now().UTC(),
-	})
+		ExitCode:    exitCode,
+	}
+	m.emitAlertRecord(ctx, alert)
 }
 
-func (m *Monitor) emit(ctx context.Context, e store.Event) {
+func (m *Monitor) emitEvent(ctx context.Context, e store.Event) {
 	var container store.Container
 	var ok bool
 	if e.ContainerID != "" {
@@ -378,23 +513,29 @@ func (m *Monitor) emit(ctx context.Context, e store.Event) {
 
 	update := api.EventUpdate{
 		Container: api.ContainerResponse{
-			ID:          container.ID,
-			Name:        container.Name,
-			ContainerID: container.ContainerID,
-			Image:       container.Image,
-			ImageTag:    container.ImageTag,
-			ImageID:     container.ImageID,
-			CreatedAt:   container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-			FirstSeenAt: container.FirstSeenAt.UTC().Format("2006-01-02T15:04:05Z"),
-			Status:      container.Status,
-			Role:        container.Role,
-			Caps:        container.Caps,
-			ReadOnly:    container.ReadOnly,
-			User:        container.User,
-			LastEvent:   &api.EventResponse{ID: id, Type: e.Type, Severity: e.Severity, Message: e.Message, Timestamp: e.Timestamp.UTC().Format("2006-01-02T15:04:05Z")},
-			Present:     container.Present,
+			ID:                  container.ID,
+			Name:                container.Name,
+			ContainerID:         container.ContainerID,
+			Image:               container.Image,
+			ImageTag:            container.ImageTag,
+			ImageID:             container.ImageID,
+			CreatedAt:           container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			RegisteredAt:        container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
+			StartedAt:           container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			Status:              container.Status,
+			Role:                container.Role,
+			Caps:                container.Caps,
+			ReadOnly:            container.ReadOnly,
+			User:                container.User,
+			LastEvent:           &api.EventResponse{ID: id, Type: e.Type, Severity: e.Severity, Message: e.Message, Timestamp: e.Timestamp.UTC().Format("2006-01-02T15:04:05Z"), ExitCode: e.ExitCode},
+			Present:             container.Present,
+			HealthStatus:        container.HealthStatus,
+			HealthFailingStreak: container.HealthFailingStreak,
+			RestartLoop:         container.RestartLoop,
+			RestartStreak:       container.RestartStreak,
+			Healthcheck:         container.Healthcheck,
 		},
-		Event: api.EventResponse{
+		Event: &api.EventResponse{
 			ID:          e.ID,
 			ContainerPK: container.ID,
 			Container:   e.Container,
@@ -409,32 +550,91 @@ func (m *Monitor) emit(ctx context.Context, e store.Event) {
 			NewImageID:  e.NewImageID,
 			Reason:      e.Reason,
 			DetailsJSON: e.DetailsJSON,
+			ExitCode:    e.ExitCode,
 		},
 	}
 
 	m.server.Broadcast(ctx, update)
-	if shouldAlert(e.Type) {
-		m.sendTelegram(ctx, e)
-	}
 }
 
-func (m *Monitor) sendTelegram(ctx context.Context, e store.Event) {
+func (m *Monitor) emitAlertRecord(ctx context.Context, a store.Alert) {
+	var container store.Container
+	var ok bool
+	if a.ContainerID != "" {
+		container, ok, _ = m.store.GetContainerByContainerID(ctx, a.ContainerID)
+	}
+	if !ok {
+		container, ok = m.store.GetContainer(a.Container)
+	}
+	if !ok {
+		return
+	}
+
+	a.Container = container.Name
+	a.ContainerPK = container.ID
+	log.Printf("alert: type=%s severity=%s container=%s", a.Type, a.Severity, a.Container)
+	id, err := m.store.AddAlert(ctx, a)
+	if err != nil {
+		log.Printf("alert persist failed: %v", err)
+		return
+	}
+	a.ID = id
+
+	update := api.EventUpdate{
+		Container: api.ContainerResponse{
+			ID:                  container.ID,
+			Name:                container.Name,
+			ContainerID:         container.ContainerID,
+			Image:               container.Image,
+			ImageTag:            container.ImageTag,
+			ImageID:             container.ImageID,
+			CreatedAt:           container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			RegisteredAt:        container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
+			StartedAt:           container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			Status:              container.Status,
+			Role:                container.Role,
+			Caps:                container.Caps,
+			ReadOnly:            container.ReadOnly,
+			User:                container.User,
+			LastEvent:           nil,
+			Present:             container.Present,
+			HealthStatus:        container.HealthStatus,
+			HealthFailingStreak: container.HealthFailingStreak,
+			RestartLoop:         container.RestartLoop,
+			RestartStreak:       container.RestartStreak,
+			Healthcheck:         container.Healthcheck,
+		},
+		Alert: &api.AlertResponse{
+			ID:          a.ID,
+			ContainerPK: container.ID,
+			Container:   a.Container,
+			ContainerID: a.ContainerID,
+			Type:        a.Type,
+			Severity:    a.Severity,
+			Message:     a.Message,
+			Timestamp:   a.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
+			OldImage:    a.OldImage,
+			NewImage:    a.NewImage,
+			OldImageID:  a.OldImageID,
+			NewImageID:  a.NewImageID,
+			Reason:      a.Reason,
+			DetailsJSON: a.DetailsJSON,
+			ExitCode:    a.ExitCode,
+		},
+	}
+
+	m.server.Broadcast(ctx, update)
+	m.sendTelegram(ctx, a)
+}
+
+func (m *Monitor) sendTelegram(ctx context.Context, a store.Alert) {
 	if m.telegram == nil {
 		return
 	}
-	prefix := strings.ToUpper(e.Severity)
-	text := fmt.Sprintf("[%s] %s: %s", prefix, e.Container, e.Message)
+	prefix := strings.ToUpper(a.Severity)
+	text := fmt.Sprintf("[%s] %s: %s", prefix, a.Container, a.Message)
 	if err := m.telegram.Send(ctx, text); err != nil {
 		log.Printf("telegram send failed: %v", err)
-	}
-}
-
-func shouldAlert(eventType string) bool {
-	switch eventType {
-	case "restart_loop", "restart_healed", "image_changed", "recreated":
-		return true
-	default:
-		return false
 	}
 }
 
@@ -443,11 +643,6 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 	status := "unknown"
 	if inspect.State != nil {
 		status = string(inspect.State.Status)
-		if inspect.State.OOMKilled {
-			status = "oom"
-		} else if inspect.State.Status == "exited" && inspect.State.ExitCode != 0 {
-			status = "crashed"
-		}
 	}
 
 	image := inspect.Config.Image
@@ -458,20 +653,46 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		user = "0:0"
 	}
 	role := resolveRole(inspect.Config.Labels)
+	healthStatus := ""
+	healthFailingStreak := 0
+	if inspect.State != nil && inspect.State.Health != nil {
+		healthStatus = string(inspect.State.Health.Status)
+		healthFailingStreak = inspect.State.Health.FailingStreak
+	}
+	var startedAt time.Time
+	if inspect.State != nil {
+		startedAt = parseDockerTime(inspect.State.StartedAt)
+	}
+	var healthcheck *store.Healthcheck
+	if inspect.Config != nil && inspect.Config.Healthcheck != nil {
+		health := inspect.Config.Healthcheck
+		healthcheck = &store.Healthcheck{
+			Test:          health.Test,
+			Interval:      durationString(health.Interval),
+			Timeout:       durationString(health.Timeout),
+			StartPeriod:   durationString(health.StartPeriod),
+			StartInterval: durationString(health.StartInterval),
+			Retries:       health.Retries,
+		}
+	}
 
 	return store.Container{
-		ContainerID: inspect.ID,
-		Image:       imageName,
-		ImageTag:    imageTag,
-		ImageID:     inspect.Image,
-		CreatedAt:   created,
-		Status:      status,
-		Role:        role,
-		Caps:        caps,
-		ReadOnly:    inspect.HostConfig.ReadonlyRootfs,
-		User:        user,
-		UpdatedAt:   time.Now().UTC(),
-		Present:     true,
+		ContainerID:         inspect.ID,
+		Image:               imageName,
+		ImageTag:            imageTag,
+		ImageID:             inspect.Image,
+		CreatedAt:           created,
+		StartedAt:           startedAt,
+		Status:              status,
+		Role:                role,
+		Caps:                caps,
+		ReadOnly:            inspect.HostConfig.ReadonlyRootfs,
+		User:                user,
+		HealthStatus:        healthStatus,
+		HealthFailingStreak: healthFailingStreak,
+		Healthcheck:         healthcheck,
+		UpdatedAt:           time.Now().UTC(),
+		Present:             true,
 	}
 }
 
@@ -495,13 +716,92 @@ func parseImage(image string) (string, string) {
 		return image, ""
 	}
 	ref = reference.TagNameOnly(ref)
-	named := ref.(reference.Named)
-	name := named.Name()
+	name := ref.Name()
 	tag := ""
-	if tagged, ok := named.(reference.NamedTagged); ok {
+	if tagged, ok := ref.(reference.NamedTagged); ok {
 		tag = tagged.Tag()
 	}
 	return name, tag
+}
+
+func durationString(val time.Duration) string {
+	if val <= 0 {
+		return ""
+	}
+	return val.String()
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.IsZero() {
+		return b
+	}
+	if b.IsZero() {
+		return a
+	}
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func parseExitCode(val string) *int {
+	trimmed := strings.TrimSpace(val)
+	if trimmed == "" {
+		return nil
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+func isHealthcheckExecEvent(msg events.Message) bool {
+	action := string(msg.Action)
+	if !strings.HasPrefix(action, "exec_") {
+		return false
+	}
+	cmd := msg.Actor.Attributes["execCommand"]
+	if cmd == "" {
+		return false
+	}
+	cmd = strings.ToLower(cmd)
+	return strings.Contains(cmd, "healthcheck")
+}
+
+func isHealthcheckStatusEvent(msg events.Message) bool {
+	return strings.HasPrefix(string(msg.Action), "health_status:")
+}
+
+func shouldAlertNoRestartPolicyFailure(reason string, exitCode *int, inspect container.InspectResponse) bool {
+	if inspect.HostConfig == nil {
+		return false
+	}
+	if hasAutoRestartPolicy(inspect) {
+		return false
+	}
+	if reason == "oom" {
+		return false
+	}
+	if exitCode == nil {
+		return false
+	}
+	return *exitCode != 0
+}
+
+func hasAutoRestartPolicy(inspect container.InspectResponse) bool {
+	if inspect.HostConfig == nil {
+		return false
+	}
+	policy := strings.ToLower(strings.TrimSpace(string(inspect.HostConfig.RestartPolicy.Name)))
+	return policy != "" && policy != "no"
 }
 
 func resolveCaps(defaults, add, drop []string) []string {
@@ -588,22 +888,21 @@ func newRestartTracker(windowSeconds, threshold int) *restartTracker {
 	}
 }
 
-func (r *restartTracker) record(name string, ts time.Time) {
+func (r *restartTracker) record(name string, ts time.Time) (int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	list := r.data[name]
 	list = append(list, ts)
 	list = r.prune(list, ts)
 	r.data[name] = list
+	enteredLoop := false
 	if len(list) >= r.threshold {
+		if !r.loop[name] {
+			enteredLoop = true
+		}
 		r.loop[name] = true
 	}
-}
-
-func (r *restartTracker) justEnteredLoop(name string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.loop[name] && len(r.data[name]) == r.threshold
+	return len(list), enteredLoop
 }
 
 func (r *restartTracker) inLoop(name string) bool {
@@ -628,6 +927,7 @@ func (r *restartTracker) markHealed(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.loop, name)
+	delete(r.data, name)
 }
 
 func (r *restartTracker) markHealthy(name string) {

@@ -322,9 +322,26 @@ body {
   margin-bottom: 4px;
 }
 
-.last-event {
+.container-side {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  text-align: right;
+  min-width: 160px;
+}
+
+.derived-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.started-time {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .event-summary {
@@ -631,16 +648,6 @@ body {
   }
 }
 
-@media (max-width: 900px) {
-  .container-main {
-    grid-template-columns: auto 1fr;
-  }
-
-  .last-event {
-    grid-column: 1 / -1;
-  }
-}
-
 @media (max-width: 600px) {
   .hero {
     padding: 8px 10px;
@@ -653,8 +660,8 @@ body {
 
   .container-main {
     padding: 12px 12px;
-    align-items: start;
-    gap: 12px;
+    column-gap: 12px;
+    row-gap: 2px;
   }
 
   .status-dot {
@@ -675,6 +682,15 @@ body {
 
   .meta {
     flex-direction: column;
+  }
+
+  .container-side {
+    grid-column: 2;
+    align-items: flex-start;
+    text-align: left;
+    min-width: 0;
+    width: 100%;
+    gap: 3px;
   }
 
   .truncate-id {

@@ -15,6 +15,8 @@ fi
 
 go vet ./...
 
+go test ./...
+
 go build -o /tmp/healthmon ./cmd/healthmon
 
 go build -o /tmp/healthmon-dev -tags dev ./cmd/healthmon

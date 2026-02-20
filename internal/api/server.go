@@ -43,6 +43,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/containers", s.handleContainers)
 	mux.HandleFunc("/api/containers/", s.handleContainerEvents)
 	mux.HandleFunc("/api/events", s.handleEvents)
+	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/events/stream", s.handleStream)
 
 	if s.staticFS != nil {
@@ -182,6 +183,29 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	beforeID, _ := strconv.ParseInt(r.URL.Query().Get("before_id"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	items, err := s.store.ListAllAlerts(r.Context(), beforeID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	resp := make([]AlertResponse, 0, len(items))
+	for _, a := range items {
+		resp = append(resp, *toAlertResponse(a))
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns:     s.wsOptions.OriginPatterns,
@@ -218,21 +242,27 @@ func (s *Server) Broadcast(ctx context.Context, update EventUpdate) {
 }
 
 type ContainerResponse struct {
-	ID          int64          `json:"id"`
-	Name        string         `json:"name"`
-	ContainerID string         `json:"container_id"`
-	Image       string         `json:"image"`
-	ImageTag    string         `json:"image_tag"`
-	ImageID     string         `json:"image_id"`
-	CreatedAt   string         `json:"created_at"`
-	FirstSeenAt string         `json:"first_seen_at"`
-	Status      string         `json:"status"`
-	Role        string         `json:"role"`
-	Caps        []string       `json:"caps"`
-	ReadOnly    bool           `json:"read_only"`
-	User        string         `json:"user"`
-	LastEvent   *EventResponse `json:"last_event"`
-	Present     bool           `json:"present"`
+	ID                  int64              `json:"id"`
+	Name                string             `json:"name"`
+	ContainerID         string             `json:"container_id"`
+	Image               string             `json:"image"`
+	ImageTag            string             `json:"image_tag"`
+	ImageID             string             `json:"image_id"`
+	CreatedAt           string             `json:"created_at"`
+	RegisteredAt        string             `json:"registered_at"`
+	StartedAt           string             `json:"started_at"`
+	Status              string             `json:"status"`
+	Role                string             `json:"role"`
+	Caps                []string           `json:"caps"`
+	ReadOnly            bool               `json:"read_only"`
+	User                string             `json:"user"`
+	LastEvent           *EventResponse     `json:"last_event"`
+	Present             bool               `json:"present"`
+	HealthStatus        string             `json:"health_status"`
+	HealthFailingStreak int                `json:"health_failing_streak"`
+	RestartLoop         bool               `json:"restart_loop"`
+	RestartStreak       int                `json:"restart_streak"`
+	Healthcheck         *store.Healthcheck `json:"healthcheck"`
 }
 
 type EventResponse struct {
@@ -250,30 +280,56 @@ type EventResponse struct {
 	NewImageID  string `json:"new_image_id"`
 	Reason      string `json:"reason"`
 	DetailsJSON string `json:"details"`
+	ExitCode    *int   `json:"exit_code"`
+}
+
+type AlertResponse struct {
+	ID          int64  `json:"id"`
+	ContainerPK int64  `json:"container_pk"`
+	Container   string `json:"container"`
+	ContainerID string `json:"container_id"`
+	Type        string `json:"type"`
+	Severity    string `json:"severity"`
+	Message     string `json:"message"`
+	Timestamp   string `json:"timestamp"`
+	OldImage    string `json:"old_image"`
+	NewImage    string `json:"new_image"`
+	OldImageID  string `json:"old_image_id"`
+	NewImageID  string `json:"new_image_id"`
+	Reason      string `json:"reason"`
+	DetailsJSON string `json:"details"`
+	ExitCode    *int   `json:"exit_code"`
 }
 
 type EventUpdate struct {
 	Container ContainerResponse `json:"container"`
-	Event     EventResponse     `json:"event"`
+	Event     *EventResponse    `json:"event,omitempty"`
+	Alert     *AlertResponse    `json:"alert,omitempty"`
 }
 
 func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerResponse {
 	return ContainerResponse{
-		ID:          c.ID,
-		Name:        c.Name,
-		ContainerID: c.ContainerID,
-		Image:       c.Image,
-		ImageTag:    c.ImageTag,
-		ImageID:     c.ImageID,
-		CreatedAt:   c.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-		FirstSeenAt: c.FirstSeenAt.UTC().Format("2006-01-02T15:04:05Z"),
-		Status:      c.Status,
-		Role:        c.Role,
-		Caps:        c.Caps,
-		ReadOnly:    c.ReadOnly,
-		User:        c.User,
-		LastEvent:   lastEvent,
-		Present:     c.Present,
+		ID:                  c.ID,
+		Name:                c.Name,
+		ContainerID:         c.ContainerID,
+		Image:               c.Image,
+		ImageTag:            c.ImageTag,
+		ImageID:             c.ImageID,
+		CreatedAt:           c.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		RegisteredAt:        c.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
+		StartedAt:           c.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		Status:              c.Status,
+		Role:                c.Role,
+		Caps:                c.Caps,
+		ReadOnly:            c.ReadOnly,
+		User:                c.User,
+		LastEvent:           lastEvent,
+		Present:             c.Present,
+		HealthStatus:        c.HealthStatus,
+		HealthFailingStreak: c.HealthFailingStreak,
+		RestartLoop:         c.RestartLoop,
+		RestartStreak:       c.RestartStreak,
+		Healthcheck:         c.Healthcheck,
 	}
 }
 
@@ -293,6 +349,27 @@ func toEventResponse(e store.Event) *EventResponse {
 		NewImageID:  e.NewImageID,
 		Reason:      e.Reason,
 		DetailsJSON: e.DetailsJSON,
+		ExitCode:    e.ExitCode,
+	}
+}
+
+func toAlertResponse(a store.Alert) *AlertResponse {
+	return &AlertResponse{
+		ID:          a.ID,
+		ContainerPK: a.ContainerPK,
+		Container:   a.Container,
+		ContainerID: a.ContainerID,
+		Type:        a.Type,
+		Severity:    a.Severity,
+		Message:     a.Message,
+		Timestamp:   a.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
+		OldImage:    a.OldImage,
+		NewImage:    a.NewImage,
+		OldImageID:  a.OldImageID,
+		NewImageID:  a.NewImageID,
+		Reason:      a.Reason,
+		DetailsJSON: a.DetailsJSON,
+		ExitCode:    a.ExitCode,
 	}
 }
 

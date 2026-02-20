@@ -32,36 +32,38 @@ func TestEmitPrefersContainerID(t *testing.T) {
 
 	now := time.Now().UTC()
 	victoria := store.Container{
-		Name:        "victoria-logs",
-		ContainerID: "aaa111",
-		Image:       "victoria",
-		ImageTag:    "latest",
-		ImageID:     "img-victoria",
-		CreatedAt:   now.Add(-time.Hour),
-		FirstSeenAt: now.Add(-time.Hour),
-		Status:      "running",
-		Role:        "service",
-		Caps:        []string{},
-		ReadOnly:    false,
-		User:        "0:0",
-		UpdatedAt:   now.Add(-time.Hour),
-		Present:     true,
+		Name:         "victoria-logs",
+		ContainerID:  "aaa111",
+		Image:        "victoria",
+		ImageTag:     "latest",
+		ImageID:      "img-victoria",
+		CreatedAt:    now.Add(-time.Hour),
+		RegisteredAt: now.Add(-time.Hour),
+		StartedAt:    now.Add(-30 * time.Minute),
+		Status:       "running",
+		Role:         "service",
+		Caps:         []string{},
+		ReadOnly:     false,
+		User:         "0:0",
+		UpdatedAt:    now.Add(-time.Hour),
+		Present:      true,
 	}
 	imapsync := store.Container{
-		Name:        "imapsync",
-		ContainerID: "bbb222",
-		Image:       "imapsync",
-		ImageTag:    "latest",
-		ImageID:     "img-imapsync",
-		CreatedAt:   now.Add(-time.Hour),
-		FirstSeenAt: now.Add(-time.Hour),
-		Status:      "running",
-		Role:        "service",
-		Caps:        []string{},
-		ReadOnly:    false,
-		User:        "0:0",
-		UpdatedAt:   now.Add(-time.Hour),
-		Present:     true,
+		Name:         "imapsync",
+		ContainerID:  "bbb222",
+		Image:        "imapsync",
+		ImageTag:     "latest",
+		ImageID:      "img-imapsync",
+		CreatedAt:    now.Add(-time.Hour),
+		RegisteredAt: now.Add(-time.Hour),
+		StartedAt:    now.Add(-30 * time.Minute),
+		Status:       "running",
+		Role:         "service",
+		Caps:         []string{},
+		ReadOnly:     false,
+		User:         "0:0",
+		UpdatedAt:    now.Add(-time.Hour),
+		Present:      true,
 	}
 
 	if err := st.UpsertContainer(ctx, victoria); err != nil {
@@ -74,7 +76,7 @@ func TestEmitPrefersContainerID(t *testing.T) {
 	server := api.NewServer(st, api.NewBroadcaster(), api.WSOptions{})
 	mon := New(config.Config{}, st, server)
 
-	mon.emit(ctx, store.Event{
+	mon.emitEvent(ctx, store.Event{
 		Container:   "imapsync",
 		ContainerID: "aaa111",
 		Type:        "started",
