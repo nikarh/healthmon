@@ -296,6 +296,7 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 	m.restarts.reset(oldName)
 	m.restarts.reset(newName)
 	_ = m.store.RenameContainer(ctx, oldName, newName, info)
+	m.emitInfo(ctx, newName, msg.Actor.ID, "renamed", fmt.Sprintf("Container renamed %s -> %s", oldName, newName), "", "", "", "", "rename", nil)
 }
 
 func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
