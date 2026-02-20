@@ -149,7 +149,7 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 	case msg.Action == "oom":
 		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom", nil, "")
 	case msg.Action == "kill":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "kill", nil, strings.TrimSpace(msg.Actor.Attributes["signal"]))
+		m.handleSignal(ctx, name, msg.Actor.ID, strings.TrimSpace(msg.Actor.Attributes["signal"]))
 	case strings.HasPrefix(string(msg.Action), "health_status:"):
 		m.handleHealth(ctx, name, msg.Actor.ID, strings.TrimSpace(strings.TrimPrefix(string(msg.Action), "health_status:")))
 	case msg.Action == "rename":
@@ -396,6 +396,16 @@ func (m *Monitor) handleStop(ctx context.Context, name, id string, exitCode *int
 		}
 		_ = m.store.UpsertContainer(ctx, existing)
 	}
+}
+
+func (m *Monitor) handleSignal(ctx context.Context, name, id, signal string) {
+	message := "Signal sent"
+	reason := "signal"
+	if signal != "" {
+		message = fmt.Sprintf("Signal sent: %s", signal)
+		reason = fmt.Sprintf("signal_%s", strings.ToLower(signal))
+	}
+	m.emitInfo(ctx, name, id, "signal", message, "", "", "", "", reason, nil)
 }
 
 func (m *Monitor) watchHeals(ctx context.Context) {
@@ -771,9 +781,6 @@ func shouldAlertNoRestartPolicyFailure(reason string, exitCode *int, inspect con
 	}
 	if reason == "oom" {
 		return false
-	}
-	if reason == "kill" {
-		return true
 	}
 	if exitCode == nil {
 		return false
