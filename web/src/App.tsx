@@ -23,8 +23,10 @@ interface Container {
   present: boolean
   health_status: string
   health_failing_streak: number
+  unhealthy_since: string
   restart_loop: boolean
   restart_streak: number
+  restart_loop_since: string
   healthcheck: Healthcheck | null
 }
 
@@ -261,17 +263,19 @@ const deriveAlertContainerLine = (alert: AlertItem) => {
 
 const deriveDerivedStatus = (container: Container) => {
   if (container.restart_loop) {
+    const badSince = formatRelativeTime(container.restart_loop_since)
     return {
       label: 'Restart loop',
-      detail: `${String(container.restart_streak)} restarts`,
+      detail: `${String(container.restart_streak)} restarts · Bad since ${badSince}`,
       severity: 'sev-red',
     }
   }
   const health = container.health_status.toLowerCase()
   if (health === 'unhealthy') {
+    const badSince = formatRelativeTime(container.unhealthy_since)
     return {
       label: 'Unhealthy',
-      detail: `${String(container.health_failing_streak)} failed checks`,
+      detail: `${String(container.health_failing_streak)} failed checks · Bad since ${badSince}`,
       severity: 'sev-red',
     }
   }
@@ -828,12 +832,6 @@ function ContainerRow({
                 Read-only: {container.read_only ? 'yes' : 'no'}
                 {!container.read_only && <span className="warn-badge">!</span>}
               </p>
-              <p>
-                Image ID: <span className="truncate-id">{container.image_id}</span>
-              </p>
-              <p>
-                Container ID: <span className="truncate-id">{container.container_id}</span>
-              </p>
             </div>
             <div>
               <h3>Capabilities</h3>
@@ -866,8 +864,13 @@ function ContainerRow({
                 <span>{eventsTotal ?? events.length} total</span>
               </div>
               <div className="event-list">
-                {events.map((event) => (
-                  <div key={event.id} className="event-row event-row-compact">
+                {events.map((event, index) => (
+                  <div
+                    key={event.id}
+                    className={`event-row event-row-compact ${
+                      index === events.length - 1 ? 'feed-row-last' : ''
+                    }`}
+                  >
                     <div className={`event-dot ${severityClass(event.severity)}`} />
                     <div className="event-body">
                       <div className="event-top">
@@ -1011,6 +1014,7 @@ function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllE
             overscanCount={4}
           />
         )}
+        {page.loading && <div className="loading loading-overlay">Loading more events…</div>}
       </div>
       {error && (
         <div className="error-state">
@@ -1020,7 +1024,6 @@ function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllE
           </button>
         </div>
       )}
-      {page.loading && <div className="loading">Loading more events…</div>}
       {page.done && !error && events.length === 0 && (
         <div className="empty">No events recorded yet.</div>
       )}
@@ -1153,6 +1156,7 @@ function AllAlertsFeed({
             overscanCount={4}
           />
         )}
+        {page.loading && <div className="loading loading-overlay">Loading more alerts…</div>}
       </div>
       {error && (
         <div className="error-state">
@@ -1162,7 +1166,6 @@ function AllAlertsFeed({
           </button>
         </div>
       )}
-      {page.loading && <div className="loading">Loading more alerts…</div>}
       {page.done && !error && alerts.length === 0 && (
         <div className="empty">No alerts recorded yet.</div>
       )}

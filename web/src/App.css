@@ -468,6 +468,7 @@ body {
   min-height: 0;
   margin: 0;
   flex: 1;
+  position: relative;
 }
 
 .event-row {
@@ -584,6 +585,7 @@ body {
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .event-container,
@@ -602,6 +604,17 @@ body {
   padding: 12px;
   color: var(--text-subtle);
   font-size: 13px;
+}
+
+.loading-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  margin: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), var(--bg-card) 45%);
 }
 
 .section {
