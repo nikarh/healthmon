@@ -236,6 +236,7 @@ const deriveContainerLine = (event: EventItem) => {
 }
 
 const deriveAlertTitle = (alert: AlertItem) => {
+  if (alert.type.toLowerCase() === 'failure_no_restart') return 'FAILURE'
   const reason = singleWord(alert.reason)
   if (reason) return toTitle(reason)
   const type = singleWord(alert.type)
@@ -1277,7 +1278,7 @@ function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight 
   const isLast = index === alerts.length - 1
   const title = deriveAlertTitle(alert)
   const changeLine = deriveAlertChangeLine(alert)
-  let message = alert.message
+  let message = alert.type.toLowerCase() === 'failure_no_restart' ? 'Task failed' : alert.message
   if (alert.type === 'restart_loop') {
     const count = parseAlertRestartCount(alert)
     message = count ? `Restart loop detected (${String(count)} restarts)` : 'Restart loop detected'
