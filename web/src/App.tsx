@@ -19,7 +19,6 @@ interface Container {
   caps: string[]
   read_only: boolean
   user: string
-  last_event: EventItem | null
   present: boolean
   health_status: string
   health_failing_streak: number
@@ -45,7 +44,6 @@ interface EventItem {
   container: string
   container_id: string
   type: string
-  severity: string
   message: string
   timestamp: string
   old_image: string
@@ -63,7 +61,6 @@ interface AlertItem {
   container: string
   container_id: string
   type: string
-  severity: string
   message: string
   timestamp: string
   old_image: string
@@ -111,11 +108,20 @@ const statusClass = (status: string) => {
   return 'status-warn'
 }
 
-const severityClass = (severity: string) => {
-  const s = severity.toLowerCase()
-  if (s === 'red') return 'sev-red'
-  if (s === 'green') return 'sev-green'
+const eventSeverityClass = (event: EventItem) => {
+  const type = event.type.toLowerCase()
+  const reason = event.reason.toLowerCase()
+  if (type === 'restart') return 'sev-red'
+  if (type === 'stopped' && event.exit_code != null && event.exit_code !== 0) return 'sev-red'
+  if (reason === 'oom' || reason === 'die') return 'sev-red'
   return 'sev-blue'
+}
+
+const alertSeverityClass = (alert: AlertItem) => {
+  const type = alert.type.toLowerCase()
+  if (type === 'healthy' || type === 'restart_healed') return 'sev-green'
+  if (type === 'image_changed' || type === 'recreated') return 'sev-blue'
+  return 'sev-red'
 }
 
 const formatDate = (val: string) => {
@@ -871,7 +877,7 @@ function ContainerRow({
                       index === events.length - 1 ? 'feed-row-last' : ''
                     }`}
                   >
-                    <div className={`event-dot ${severityClass(event.severity)}`} />
+                    <div className={`event-dot ${eventSeverityClass(event)}`} />
                     <div className="event-body">
                       <div className="event-top">
                         <span className="event-title">{deriveEventTitle(event)}</span>
@@ -1215,7 +1221,7 @@ function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight 
         isLast ? 'feed-row-last' : ''
       }`}
     >
-      <div className={`event-dot ${severityClass(event.severity)}`} />
+      <div className={`event-dot ${eventSeverityClass(event)}`} />
       <div className="event-body">
         <div className="event-top">
           <span className="event-title">{title}</span>
@@ -1296,7 +1302,7 @@ function AlertRow({
         isLast ? 'feed-row-last' : ''
       }`}
     >
-      <div className={`event-dot ${severityClass(alert.severity)}`} />
+      <div className={`event-dot ${alertSeverityClass(alert)}`} />
       <div className="event-body">
         <div className="event-top">
           <span className="event-title">{title}</span>
