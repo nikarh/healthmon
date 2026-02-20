@@ -91,6 +91,7 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
 		autoRestart := hasAutoRestartPolicy(inspect.Container)
+		now := time.Now().UTC()
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
 			if info.StartedAt.IsZero() {
@@ -98,7 +99,7 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 			}
 			info.UnhealthySince = existing.UnhealthySince
 			if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
-				info.UnhealthySince = time.Now().UTC()
+				info.UnhealthySince = now
 			}
 			if strings.ToLower(info.HealthStatus) != "unhealthy" {
 				info.UnhealthySince = time.Time{}
@@ -122,6 +123,14 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 						info.RestartLoopSince = time.Time{}
 					}
 				}
+				// If monitor was down and container has been running longer than the
+				// restart-loop window, treat loop as healed on startup sync.
+				if info.RestartLoop && strings.ToLower(info.Status) == "running" && !info.StartedAt.IsZero() && now.Sub(info.StartedAt) > m.restarts.window {
+					info.RestartLoop = false
+					info.RestartStreak = 0
+					info.RestartLoopSince = time.Time{}
+					m.restarts.markHealed(name)
+				}
 			} else {
 				info.RestartLoop = false
 				info.RestartStreak = 0
@@ -130,10 +139,10 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 			}
 		}
 		if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
-			info.UnhealthySince = time.Now().UTC()
+			info.UnhealthySince = now
 		}
 		if info.RegisteredAt.IsZero() {
-			info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
+			info.RegisteredAt = minTime(info.CreatedAt, now)
 		}
 		if err := m.store.UpsertContainer(ctx, info); err != nil {
 			return err
