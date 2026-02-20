@@ -449,28 +449,34 @@ func (m *Monitor) watchHeals(ctx context.Context) {
 
 func (m *Monitor) checkHeals(ctx context.Context) {
 	now := time.Now().UTC()
-	for _, name := range m.store.ContainerNames() {
-		if !m.restarts.inLoop(name) {
+	for _, c := range m.store.ListContainers() {
+		if !c.RestartLoop {
 			continue
 		}
-		if !m.restarts.canHeal(name, now) {
+		if strings.ToLower(c.Status) != "running" {
 			continue
 		}
-		if c, ok := m.store.GetContainer(name); ok {
-			if strings.ToLower(c.Status) == "running" {
-				streak := c.RestartStreak
-				c.RestartLoop = false
-				c.RestartStreak = 0
-				c.UpdatedAt = now
-				_ = m.store.UpsertContainer(ctx, c)
-				m.restarts.markHealed(name)
-				message := "Restart loop healed"
-				if streak > 0 {
-					message = fmt.Sprintf("Restart loop healed after %d restarts", streak)
-				}
-				m.emitAlert(ctx, name, c.ContainerID, "restart_healed", message, "green", nil)
-			}
+
+		lastRestart, ok, err := m.store.GetLatestRestartTimestampByContainerPK(ctx, c.ID)
+		if err != nil {
+			log.Printf("restart heal check failed for %s: %v", c.Name, err)
+			continue
 		}
+		if ok && now.Sub(lastRestart) <= m.restarts.window {
+			continue
+		}
+
+		streak := c.RestartStreak
+		c.RestartLoop = false
+		c.RestartStreak = 0
+		c.UpdatedAt = now
+		_ = m.store.UpsertContainer(ctx, c)
+		m.restarts.markHealed(c.Name)
+		message := "Restart loop healed"
+		if streak > 0 {
+			message = fmt.Sprintf("Restart loop healed after %d restarts", streak)
+		}
+		m.emitAlert(ctx, c.Name, c.ContainerID, "restart_healed", message, "green", nil)
 	}
 }
 
