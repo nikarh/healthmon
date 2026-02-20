@@ -101,29 +101,8 @@ func (s *Server) handleContainers(w http.ResponseWriter, r *http.Request) {
 
 	items := s.store.ListContainers()
 	resp := make([]ContainerResponse, 0, len(items))
-	ctx := r.Context()
 	for _, c := range items {
-		var lastEvent *EventResponse
-		if c.LastEventID > 0 {
-			event, ok, err := s.store.GetEvent(ctx, c.LastEventID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			if ok {
-				lastEvent = toEventResponse(event)
-			}
-		} else if c.ID > 0 {
-			event, ok, err := s.store.GetLatestEventByContainerPK(ctx, c.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			if ok {
-				lastEvent = toEventResponse(event)
-			}
-		}
-		resp = append(resp, toContainerResponse(c, lastEvent))
+		resp = append(resp, toContainerResponse(c))
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -271,7 +250,6 @@ type ContainerResponse struct {
 	Caps                []string           `json:"caps"`
 	ReadOnly            bool               `json:"read_only"`
 	User                string             `json:"user"`
-	LastEvent           *EventResponse     `json:"last_event"`
 	Present             bool               `json:"present"`
 	HealthStatus        string             `json:"health_status"`
 	HealthFailingStreak int                `json:"health_failing_streak"`
@@ -288,7 +266,6 @@ type EventResponse struct {
 	Container   string `json:"container"`
 	ContainerID string `json:"container_id"`
 	Type        string `json:"type"`
-	Severity    string `json:"severity"`
 	Message     string `json:"message"`
 	Timestamp   string `json:"timestamp"`
 	OldImage    string `json:"old_image"`
@@ -311,7 +288,6 @@ type AlertResponse struct {
 	Container   string `json:"container"`
 	ContainerID string `json:"container_id"`
 	Type        string `json:"type"`
-	Severity    string `json:"severity"`
 	Message     string `json:"message"`
 	Timestamp   string `json:"timestamp"`
 	OldImage    string `json:"old_image"`
@@ -337,7 +313,7 @@ type EventUpdate struct {
 	AlertTotal          *int64            `json:"alert_total,omitempty"`
 }
 
-func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerResponse {
+func toContainerResponse(c store.Container) ContainerResponse {
 	return ContainerResponse{
 		ID:                  c.ID,
 		Name:                c.Name,
@@ -353,7 +329,6 @@ func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerR
 		Caps:                c.Caps,
 		ReadOnly:            c.ReadOnly,
 		User:                c.User,
-		LastEvent:           lastEvent,
 		Present:             c.Present,
 		HealthStatus:        c.HealthStatus,
 		HealthFailingStreak: c.HealthFailingStreak,
@@ -372,7 +347,6 @@ func toEventResponse(e store.Event) *EventResponse {
 		Container:   e.Container,
 		ContainerID: e.ContainerID,
 		Type:        e.Type,
-		Severity:    e.Severity,
 		Message:     e.Message,
 		Timestamp:   e.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
 		OldImage:    e.OldImage,
@@ -392,7 +366,6 @@ func toAlertResponse(a store.Alert) *AlertResponse {
 		Container:   a.Container,
 		ContainerID: a.ContainerID,
 		Type:        a.Type,
-		Severity:    a.Severity,
 		Message:     a.Message,
 		Timestamp:   a.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
 		OldImage:    a.OldImage,
