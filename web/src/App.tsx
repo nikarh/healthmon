@@ -931,7 +931,10 @@ interface AllEventsProps {
 
 function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllEventsProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
-  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 136 })
+  const rowHeight = useDynamicRowHeight({
+    defaultRowHeight: 136,
+    key: events[0]?.id ?? 'empty',
+  })
   const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
   const handleItemsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
@@ -1063,7 +1066,10 @@ interface AllAlertsProps {
 
 function AllAlertsFeed({ alerts, total, page, onLoadMore, error, onRetry }: AllAlertsProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
-  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 136 })
+  const rowHeight = useDynamicRowHeight({
+    defaultRowHeight: 136,
+    key: alerts[0]?.id ?? 'empty',
+  })
   const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
   const handleItemsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
