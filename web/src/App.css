@@ -344,6 +344,13 @@ body {
   color: var(--text-muted);
 }
 
+.time-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: inherit;
+}
+
 .event-summary {
   display: flex;
   align-items: center;
