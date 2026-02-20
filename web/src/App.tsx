@@ -181,6 +181,9 @@ const deriveChangeLine = (event: EventItem) => {
   }
   const message = event.message || ''
   if (!message) return ''
+  if (message.toLowerCase().includes('signal ')) {
+    return message
+  }
   if (message.includes('->')) {
     return message
   }

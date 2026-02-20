@@ -142,14 +142,14 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 		if exitCode == nil || *exitCode == 0 {
 			m.handleStop(ctx, name, msg.Actor.ID, exitCode)
 		} else {
-			m.handleRestartLike(ctx, name, msg.Actor.ID, "die", exitCode)
+			m.handleRestartLike(ctx, name, msg.Actor.ID, "die", exitCode, "")
 		}
 	case msg.Action == "restart":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "restart", nil)
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "restart", nil, "")
 	case msg.Action == "oom":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom", nil)
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "oom", nil, "")
 	case msg.Action == "kill":
-		m.handleRestartLike(ctx, name, msg.Actor.ID, "kill", nil)
+		m.handleRestartLike(ctx, name, msg.Actor.ID, "kill", nil, strings.TrimSpace(msg.Actor.Attributes["signal"]))
 	case strings.HasPrefix(string(msg.Action), "health_status:"):
 		m.handleHealth(ctx, name, msg.Actor.ID, strings.TrimSpace(strings.TrimPrefix(string(msg.Action), "health_status:")))
 	case msg.Action == "rename":
@@ -303,11 +303,15 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 	}
 }
 
-func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string, exitCode *int) {
+func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string, exitCode *int, signal string) {
 	now := time.Now().UTC()
 
 	streak, enteredLoop := m.restarts.record(name, now)
-	m.emitInfo(ctx, name, id, "restart", fmt.Sprintf("Restart event: %s", reason), "", "", "", "", reason, exitCode)
+	message := fmt.Sprintf("Restart event: %s", reason)
+	if signal != "" {
+		message = fmt.Sprintf("Restart event: %s (signal %s)", reason, signal)
+	}
+	m.emitInfo(ctx, name, id, "restart", message, "", "", "", "", reason, exitCode)
 
 	if c, ok := m.store.GetContainer(name); ok {
 		c.RestartStreak = streak
