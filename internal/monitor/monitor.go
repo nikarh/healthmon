@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -106,6 +107,21 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 				info.RestartLoop = existing.RestartLoop
 				info.RestartStreak = existing.RestartStreak
 				info.RestartLoopSince = existing.RestartLoopSince
+				if latestLoopAlert, found, err := m.store.GetLatestRestartLoopAlertByContainerPK(ctx, existing.ID); err == nil && found {
+					if latestLoopAlert.Type == "restart_loop" {
+						info.RestartLoop = true
+						if count := parseRestartCount(latestLoopAlert.DetailsJSON); count > 0 {
+							info.RestartStreak = count
+						}
+						if !latestLoopAlert.Timestamp.IsZero() {
+							info.RestartLoopSince = latestLoopAlert.Timestamp
+						}
+					} else if latestLoopAlert.Type == "restart_healed" {
+						info.RestartLoop = false
+						info.RestartStreak = 0
+						info.RestartLoopSince = time.Time{}
+					}
+				}
 			} else {
 				info.RestartLoop = false
 				info.RestartStreak = 0
@@ -411,7 +427,16 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 		m.emitAlert(ctx, name, id, "oom_killed", "Container killed by OOM", "red", exitCode)
 	}
 	if enteredLoop {
-		m.emitAlert(ctx, name, id, "restart_loop", "Restart loop detected", "red", nil)
+		details, _ := json.Marshal(map[string]int{"restart_count": streak})
+		m.emitAlertRecord(ctx, store.Alert{
+			Container:   name,
+			ContainerID: id,
+			Type:        "restart_loop",
+			Severity:    "red",
+			Message:     "Restart loop detected",
+			Timestamp:   now,
+			DetailsJSON: string(details),
+		})
 	}
 
 	if inspectErr == nil {
@@ -559,7 +584,16 @@ func (m *Monitor) checkHeals(ctx context.Context) {
 		if streak > 0 {
 			message = fmt.Sprintf("Restart loop healed after %d restarts", streak)
 		}
-		m.emitAlert(ctx, c.Name, c.ContainerID, "restart_healed", message, "green", nil)
+		details, _ := json.Marshal(map[string]int{"restart_count": streak})
+		m.emitAlertRecord(ctx, store.Alert{
+			Container:   c.Name,
+			ContainerID: c.ContainerID,
+			Type:        "restart_healed",
+			Severity:    "green",
+			Message:     message,
+			Timestamp:   now,
+			DetailsJSON: string(details),
+		})
 	}
 }
 
@@ -886,6 +920,19 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func parseRestartCount(details string) int {
+	if strings.TrimSpace(details) == "" {
+		return 0
+	}
+	var payload struct {
+		RestartCount int `json:"restart_count"`
+	}
+	if err := json.Unmarshal([]byte(details), &payload); err != nil {
+		return 0
+	}
+	return payload.RestartCount
 }
 
 func parseExitCode(val string) *int {
