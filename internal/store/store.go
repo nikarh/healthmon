@@ -288,14 +288,15 @@ func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 
 	var id int64
 	err = s.db.QueryRowContext(ctx, `
-INSERT INTO containers (name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, restart_loop, restart_streak, healthcheck)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO containers (name, container_id, image, image_tag, image_id, created_at_container, first_seen_at, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, restart_loop, restart_streak, healthcheck)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET
   container_id=excluded.container_id,
   image=excluded.image,
   image_tag=excluded.image_tag,
   image_id=excluded.image_id,
   created_at_container=excluded.created_at_container,
+  first_seen_at=excluded.first_seen_at,
   registered_at=excluded.registered_at,
   started_at=excluded.started_at,
   status=excluded.status,
@@ -312,7 +313,7 @@ ON CONFLICT(name) DO UPDATE SET
   restart_streak=excluded.restart_streak,
   healthcheck=excluded.healthcheck
 RETURNING id
-`, c.Name, c.ContainerID, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.RegisteredAt), formatTime(c.StartedAt), c.Status, c.Role, string(capsJSON), readOnly, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present, c.HealthStatus, c.HealthFailingStreak, restartLoop, c.RestartStreak, healthcheckJSON).Scan(&id)
+`, c.Name, c.ContainerID, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.RegisteredAt), formatTime(c.RegisteredAt), formatTime(c.StartedAt), c.Status, c.Role, string(capsJSON), readOnly, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present, c.HealthStatus, c.HealthFailingStreak, restartLoop, c.RestartStreak, healthcheckJSON).Scan(&id)
 	if err != nil {
 		return err
 	}
