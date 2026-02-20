@@ -377,6 +377,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	if hasAutoRestart {
 		streak, enteredLoop = m.restarts.record(name, now)
 	}
+	inLoop := hasAutoRestart && m.restarts.inLoop(name)
 	message := fmt.Sprintf("Restart event: %s", reason)
 	if signal != "" {
 		message = fmt.Sprintf("Restart event: %s (signal %s)", reason, signal)
@@ -384,8 +385,16 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	m.emitInfo(ctx, name, id, "restart", message, "", "", "", "", reason, exitCode)
 
 	if c, ok := m.store.GetContainer(name); ok {
-		c.RestartStreak = streak
-		c.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
+		c.RestartLoop = inLoop
+		if c.RestartLoop {
+			if c.RestartStreak <= 0 || enteredLoop {
+				c.RestartStreak = streak
+			} else {
+				c.RestartStreak++
+			}
+		} else {
+			c.RestartStreak = streak
+		}
 		if c.RestartLoop {
 			if c.RestartLoopSince.IsZero() {
 				c.RestartLoopSince = now
@@ -407,6 +416,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	if inspectErr == nil {
 		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
+		computedLoopStreak := streak
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
 			info.StartedAt = existing.StartedAt
@@ -418,9 +428,10 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 				info.UnhealthySince = now
 			}
 			info.RestartLoopSince = existing.RestartLoopSince
+			computedLoopStreak = existing.RestartStreak
 		}
-		info.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
-		info.RestartStreak = streak
+		info.RestartLoop = inLoop
+		info.RestartStreak = computedLoopStreak
 		if info.RestartLoop {
 			if info.RestartLoopSince.IsZero() {
 				info.RestartLoopSince = now
