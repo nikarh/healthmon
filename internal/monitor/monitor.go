@@ -89,13 +89,20 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 		}
 		info := m.inspectToContainer(inspect.Container)
 		info.Name = name
+		autoRestart := hasAutoRestartPolicy(inspect.Container)
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
 			if info.StartedAt.IsZero() {
 				info.StartedAt = existing.StartedAt
 			}
-			info.RestartLoop = existing.RestartLoop
-			info.RestartStreak = existing.RestartStreak
+			if autoRestart {
+				info.RestartLoop = existing.RestartLoop
+				info.RestartStreak = existing.RestartStreak
+			} else {
+				info.RestartLoop = false
+				info.RestartStreak = 0
+				m.restarts.reset(name)
+			}
 		}
 		if info.RegisteredAt.IsZero() {
 			info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
@@ -205,6 +212,11 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 	}
 	info := m.inspectToContainer(inspect.Container)
 	info.Name = name
+	if !hasAutoRestartPolicy(inspect.Container) {
+		info.RestartLoop = false
+		info.RestartStreak = 0
+		m.restarts.reset(name)
+	}
 	if existing, ok := m.store.GetContainer(name); ok {
 		info.RegisteredAt = existing.RegisteredAt
 		if info.StartedAt.IsZero() {
@@ -334,8 +346,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 		m.emitAlert(ctx, name, id, "oom_killed", "Container killed by OOM", "red", exitCode)
 	}
 	if enteredLoop {
-		message := fmt.Sprintf("Restart loop detected (%d restarts)", streak)
-		m.emitAlert(ctx, name, id, "restart_loop", message, "red", nil)
+		m.emitAlert(ctx, name, id, "restart_loop", "Restart loop detected", "red", nil)
 	}
 
 	if inspectErr == nil {
@@ -510,6 +521,20 @@ func (m *Monitor) emitEvent(ctx context.Context, e store.Event) {
 		return
 	}
 	e.ID = id
+	if latest, latestOK := m.store.GetContainer(container.Name); latestOK {
+		container = latest
+	}
+
+	eventTotal, err := m.store.CountAllEvents(ctx)
+	hasEventTotal := err == nil
+	if err != nil {
+		log.Printf("event total count failed: %v", err)
+	}
+	containerEventTotal, err := m.store.CountEventsByContainer(ctx, container.Name)
+	hasContainerEventTotal := err == nil
+	if err != nil {
+		log.Printf("container event total count failed: %v", err)
+	}
 
 	update := api.EventUpdate{
 		Container: api.ContainerResponse{
@@ -553,6 +578,12 @@ func (m *Monitor) emitEvent(ctx context.Context, e store.Event) {
 			ExitCode:    e.ExitCode,
 		},
 	}
+	if hasEventTotal {
+		update.EventTotal = &eventTotal
+	}
+	if hasContainerEventTotal {
+		update.ContainerEventTotal = &containerEventTotal
+	}
 
 	m.server.Broadcast(ctx, update)
 }
@@ -579,6 +610,15 @@ func (m *Monitor) emitAlertRecord(ctx context.Context, a store.Alert) {
 		return
 	}
 	a.ID = id
+	if latest, latestOK := m.store.GetContainer(container.Name); latestOK {
+		container = latest
+	}
+
+	alertTotal, err := m.store.CountAllAlerts(ctx)
+	hasAlertTotal := err == nil
+	if err != nil {
+		log.Printf("alert total count failed: %v", err)
+	}
 
 	update := api.EventUpdate{
 		Container: api.ContainerResponse{
@@ -621,6 +661,9 @@ func (m *Monitor) emitAlertRecord(ctx context.Context, a store.Alert) {
 			DetailsJSON: a.DetailsJSON,
 			ExitCode:    a.ExitCode,
 		},
+	}
+	if hasAlertTotal {
+		update.AlertTotal = &alertTotal
 	}
 
 	m.server.Broadcast(ctx, update)

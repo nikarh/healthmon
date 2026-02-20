@@ -414,6 +414,22 @@ LIMIT ?
 	return items, nil
 }
 
+func (s *Store) CountEventsByContainer(ctx context.Context, container string) (int64, error) {
+	containerInfo, ok, err := s.GetContainerByName(ctx, container)
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return 0, nil
+	}
+
+	var total int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM events WHERE container_pk = ?`, containerInfo.ID).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 func (s *Store) ListAllEvents(ctx context.Context, beforeID int64, limit int) ([]Event, error) {
 	if limit <= 0 {
 		limit = 50
@@ -472,6 +488,14 @@ LIMIT ?
 		return nil, err
 	}
 	return items, nil
+}
+
+func (s *Store) CountAllEvents(ctx context.Context) (int64, error) {
+	var total int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM events`).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 func (s *Store) AddAlert(ctx context.Context, a Alert) (int64, error) {
@@ -547,6 +571,14 @@ LIMIT ?
 		return nil, err
 	}
 	return items, nil
+}
+
+func (s *Store) CountAllAlerts(ctx context.Context) (int64, error) {
+	var total int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM alerts`).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 func (s *Store) GetEvent(ctx context.Context, id int64) (Event, bool, error) {

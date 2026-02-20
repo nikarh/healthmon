@@ -151,13 +151,18 @@ func (s *Server) handleContainerEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	total, err := s.store.CountEventsByContainer(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	resp := make([]EventResponse, 0, len(items))
 	for _, e := range items {
 		resp = append(resp, *toEventResponse(e))
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, EventListResponse{Items: resp, Total: total})
 }
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -174,13 +179,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	total, err := s.store.CountAllEvents(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	resp := make([]EventResponse, 0, len(items))
 	for _, e := range items {
 		resp = append(resp, *toEventResponse(e))
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, EventListResponse{Items: resp, Total: total})
 }
 
 func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
@@ -197,13 +207,18 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	total, err := s.store.CountAllAlerts(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	resp := make([]AlertResponse, 0, len(items))
 	for _, a := range items {
 		resp = append(resp, *toAlertResponse(a))
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, AlertListResponse{Items: resp, Total: total})
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -283,6 +298,11 @@ type EventResponse struct {
 	ExitCode    *int   `json:"exit_code"`
 }
 
+type EventListResponse struct {
+	Items []EventResponse `json:"items"`
+	Total int64           `json:"total"`
+}
+
 type AlertResponse struct {
 	ID          int64  `json:"id"`
 	ContainerPK int64  `json:"container_pk"`
@@ -301,10 +321,18 @@ type AlertResponse struct {
 	ExitCode    *int   `json:"exit_code"`
 }
 
+type AlertListResponse struct {
+	Items []AlertResponse `json:"items"`
+	Total int64           `json:"total"`
+}
+
 type EventUpdate struct {
-	Container ContainerResponse `json:"container"`
-	Event     *EventResponse    `json:"event,omitempty"`
-	Alert     *AlertResponse    `json:"alert,omitempty"`
+	Container           ContainerResponse `json:"container"`
+	Event               *EventResponse    `json:"event,omitempty"`
+	Alert               *AlertResponse    `json:"alert,omitempty"`
+	ContainerEventTotal *int64            `json:"container_event_total,omitempty"`
+	EventTotal          *int64            `json:"event_total,omitempty"`
+	AlertTotal          *int64            `json:"alert_total,omitempty"`
 }
 
 func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerResponse {
