@@ -73,10 +73,23 @@ interface AlertItem {
   exit_code?: number | null
 }
 
+interface EventListResponse {
+  items: EventItem[]
+  total: number
+}
+
+interface AlertListResponse {
+  items: AlertItem[]
+  total: number
+}
+
 interface EventUpdate {
   container: Container
   event?: EventItem | null
   alert?: AlertItem | null
+  container_event_total?: number
+  event_total?: number
+  alert_total?: number
 }
 
 interface PageState {
@@ -146,6 +159,19 @@ const displayStatus = (container: Container) => {
     return 'healthy'
   }
   return container.status
+}
+
+const hasDerivedFailure = (container: Container) => {
+  if (container.restart_loop) return true
+  return container.health_status.toLowerCase() === 'unhealthy'
+}
+
+const isContainerBroken = (container: Container) => {
+  if (hasDerivedFailure(container)) return true
+  if (container.role !== 'task') {
+    return container.status.toLowerCase() !== 'running'
+  }
+  return container.status.toLowerCase() === 'dead'
 }
 
 const shortId = (val: string, max = 12) => {
@@ -266,6 +292,9 @@ export default function App() {
   const [alerts, setAlerts] = useState<AlertItem[]>([])
   const [alertsPage, setAlertsPage] = useState<PageState>({ loading: false, done: false })
   const [alertsError, setAlertsError] = useState<string | null>(null)
+  const [eventTotals, setEventTotals] = useState<Record<string, number | undefined>>({})
+  const [allEventsTotal, setAllEventsTotal] = useState(0)
+  const [alertsTotal, setAlertsTotal] = useState(0)
 
   const sortedContainers = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -275,19 +304,16 @@ export default function App() {
     const services = filtered.filter((item) => item.role !== 'task')
     const tasks = filtered.filter((item) => item.role === 'task')
 
-    const isUnhealthyService = (item: Container) => item.status.toLowerCase() !== 'running'
-    const isCompletedTask = (item: Container) => item.status.toLowerCase() === 'exited'
-
     const sortedServices = [...services].sort((a, b) => {
-      const aRank = isUnhealthyService(a) ? 0 : 1
-      const bRank = isUnhealthyService(b) ? 0 : 1
+      const aRank = isContainerBroken(a) ? 0 : 1
+      const bRank = isContainerBroken(b) ? 0 : 1
       if (aRank !== bRank) return aRank - bRank
       return a.name.localeCompare(b.name)
     })
 
     const sortedTasks = [...tasks].sort((a, b) => {
-      const aRank = isCompletedTask(a) ? 1 : 0
-      const bRank = isCompletedTask(b) ? 1 : 0
+      const aRank = isContainerBroken(a) ? 0 : 1
+      const bRank = isContainerBroken(b) ? 0 : 1
       if (aRank !== bRank) return aRank - bRank
       return a.name.localeCompare(b.name)
     })
@@ -329,11 +355,14 @@ export default function App() {
         }))
         return
       }
-      const data = (await res.json()) as EventItem[]
+      const payload = (await res.json()) as EventListResponse | EventItem[]
+      const data = Array.isArray(payload) ? payload : payload.items
+      const total = Array.isArray(payload) ? data.length : payload.total
       setEvents((prev) => ({
         ...prev,
         [name]: [...(prev[name] ?? []), ...data],
       }))
+      setEventTotals((prev) => ({ ...prev, [name]: total }))
       setPages((prev) => ({
         ...prev,
         [name]: {
@@ -367,8 +396,11 @@ export default function App() {
         setAllEventsPage((prev) => ({ ...prev, loading: false, done: true }))
         return
       }
-      const data = (await res.json()) as EventItem[]
+      const payload = (await res.json()) as EventListResponse | EventItem[]
+      const data = Array.isArray(payload) ? payload : payload.items
+      const total = Array.isArray(payload) ? data.length : payload.total
       setAllEvents((prev) => [...prev, ...data])
+      setAllEventsTotal(total)
       setAllEventsPage({
         beforeId: data.length ? data[data.length - 1].id : beforeId,
         loading: false,
@@ -401,8 +433,11 @@ export default function App() {
         setAlertsPage((prev) => ({ ...prev, loading: false, done: true }))
         return
       }
-      const data = (await res.json()) as AlertItem[]
+      const payload = (await res.json()) as AlertListResponse | AlertItem[]
+      const data = Array.isArray(payload) ? payload : payload.items
+      const total = Array.isArray(payload) ? data.length : payload.total
       setAlerts((prev) => [...prev, ...data])
+      setAlertsTotal(total)
       setAlertsPage({
         beforeId: data.length ? data[data.length - 1].id : beforeId,
         loading: false,
@@ -454,6 +489,11 @@ export default function App() {
           void removed
           return rest
         })
+        setEventTotals((prev) => {
+          const { [name]: removed, ...rest } = prev
+          void removed
+          return rest
+        })
         return
       }
 
@@ -486,6 +526,22 @@ export default function App() {
           if (prev.some((item) => item.id === eventUpdate.id)) return prev
           return [eventUpdate, ...prev]
         })
+        if (typeof update.event_total === 'number') {
+          setAllEventsTotal(update.event_total)
+        } else {
+          setAllEventsTotal((prev) => prev + 1)
+        }
+        if (typeof update.container_event_total === 'number') {
+          setEventTotals((prev) => ({
+            ...prev,
+            [update.container.name]: update.container_event_total,
+          }))
+        } else {
+          setEventTotals((prev) => ({
+            ...prev,
+            [update.container.name]: (prev[update.container.name] ?? 0) + 1,
+          }))
+        }
       }
 
       const alertUpdate = update.alert
@@ -494,6 +550,11 @@ export default function App() {
           if (prev.some((item) => item.id === alertUpdate.id)) return prev
           return [alertUpdate, ...prev]
         })
+        if (typeof update.alert_total === 'number') {
+          setAlertsTotal(update.alert_total)
+        } else {
+          setAlertsTotal((prev) => prev + 1)
+        }
       }
     }
 
@@ -602,6 +663,7 @@ export default function App() {
                     flash={flash[container.name] ?? false}
                     onToggle={toggleExpanded}
                     events={events[container.name] ?? []}
+                    eventsTotal={eventTotals[container.name]}
                     page={pages[container.name] ?? { loading: false, done: false }}
                     onLoadMore={loadEvents}
                   />
@@ -622,6 +684,7 @@ export default function App() {
                     flash={flash[container.name] ?? false}
                     onToggle={toggleExpanded}
                     events={events[container.name] ?? []}
+                    eventsTotal={eventTotals[container.name]}
                     page={pages[container.name] ?? { loading: false, done: false }}
                     onLoadMore={loadEvents}
                   />
@@ -634,6 +697,7 @@ export default function App() {
         {view === 'events' && (
           <AllEventsFeed
             events={allEvents}
+            total={allEventsTotal}
             page={allEventsPage}
             onLoadMore={loadAllEvents}
             error={allEventsError}
@@ -648,6 +712,10 @@ export default function App() {
         {view === 'alerts' && (
           <AllAlertsFeed
             alerts={alerts}
+            total={alertsTotal}
+            restartCounts={Object.fromEntries(
+              containers.map((item) => [item.name, item.restart_streak]),
+            )}
             page={alertsPage}
             onLoadMore={loadAlerts}
             error={alertsError}
@@ -669,6 +737,7 @@ interface RowProps {
   flash: boolean
   onToggle: (name: string) => void
   events: EventItem[]
+  eventsTotal?: number
   page: PageState
   onLoadMore: (name: string) => Promise<void>
 }
@@ -679,6 +748,7 @@ function ContainerRow({
   flash,
   onToggle,
   events,
+  eventsTotal,
   page,
   onLoadMore,
 }: RowProps) {
@@ -707,6 +777,7 @@ function ContainerRow({
     }
   }, [container.name, expanded, onLoadMore, page.done, page.loading])
 
+  const hasFailure = hasDerivedFailure(container)
   return (
     <article className={`container-card ${expanded ? 'expanded' : ''} ${flash ? 'flash' : ''}`}>
       <button
@@ -716,7 +787,7 @@ function ContainerRow({
           onToggle(container.name)
         }}
       >
-        <div className={`status-dot ${statusClass(statusText)}`} />
+        <div className={`status-dot ${hasFailure ? 'status-down' : statusClass(statusText)}`} />
         <div className="container-info">
           <div className="name-row">
             <span className="name container-name">{container.name}</span>
@@ -792,7 +863,7 @@ function ContainerRow({
             <div className="events">
               <div className="events-header">
                 <h3>Events</h3>
-                <span>{events.length} loaded</span>
+                <span>{eventsTotal ?? events.length} total</span>
               </div>
               <div className="event-list">
                 {events.map((event) => (
@@ -827,13 +898,14 @@ function ContainerRow({
 
 interface AllEventsProps {
   events: EventItem[]
+  total: number
   page: PageState
   onLoadMore: () => Promise<void>
   error: string | null
   onRetry: () => void
 }
 
-function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsProps) {
+function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllEventsProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const rowHeight = useDynamicRowHeight({ defaultRowHeight: 136 })
   const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
@@ -923,7 +995,7 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
     <div className="events-feed">
       <div className="events-header">
         <h3>All events</h3>
-        <span>{events.length} loaded</span>
+        <span>{total} total</span>
       </div>
       <div ref={listRef} className="event-list feed-list">
         {events.length > 0 && listHeight > 0 && listSize.width > 0 && (
@@ -958,13 +1030,23 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
 
 interface AllAlertsProps {
   alerts: AlertItem[]
+  total: number
+  restartCounts: Record<string, number>
   page: PageState
   onLoadMore: () => Promise<void>
   error: string | null
   onRetry: () => void
 }
 
-function AllAlertsFeed({ alerts, page, onLoadMore, error, onRetry }: AllAlertsProps) {
+function AllAlertsFeed({
+  alerts,
+  total,
+  restartCounts,
+  page,
+  onLoadMore,
+  error,
+  onRetry,
+}: AllAlertsProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const rowHeight = useDynamicRowHeight({ defaultRowHeight: 136 })
   const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
@@ -1043,18 +1125,19 @@ function AllAlertsFeed({ alerts, page, onLoadMore, error, onRetry }: AllAlertsPr
         style={style}
         ariaAttributes={ariaAttributes}
         alerts={alerts}
+        restartCounts={restartCounts}
         onMeasured={handleRowMeasured}
         rowHeight={rowHeight}
       />
     ),
-    [alerts, handleRowMeasured, rowHeight],
+    [alerts, handleRowMeasured, restartCounts, rowHeight],
   )
 
   return (
     <div className="events-feed">
       <div className="events-header">
         <h3>All alerts</h3>
-        <span>{alerts.length} loaded</span>
+        <span>{total} total</span>
       </div>
       <div ref={listRef} className="event-list feed-list">
         {alerts.length > 0 && listHeight > 0 && listSize.width > 0 && (
@@ -1159,11 +1242,20 @@ interface AlertRowProps {
     role: 'listitem'
   }
   alerts: AlertItem[]
+  restartCounts: Record<string, number>
   onMeasured: () => void
   rowHeight: ReturnType<typeof useDynamicRowHeight>
 }
 
-function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight }: AlertRowProps) {
+function AlertRow({
+  index,
+  style,
+  ariaAttributes,
+  alerts,
+  restartCounts,
+  onMeasured,
+  rowHeight,
+}: AlertRowProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const notifiedRef = useRef(false)
 
@@ -1181,6 +1273,15 @@ function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight 
   const isLast = index === alerts.length - 1
   const title = deriveAlertTitle(alert)
   const changeLine = deriveAlertChangeLine(alert)
+  let message = alert.message
+  if (alert.type === 'restart_loop') {
+    const current = restartCounts[alert.container]
+    if (typeof current === 'number' && current > 0) {
+      message = `Restart loop detected (${String(current)} restarts)`
+    } else {
+      message = 'Restart loop detected'
+    }
+  }
   return (
     <div
       ref={ref}
@@ -1198,7 +1299,7 @@ function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight 
           <span className="event-title">{title}</span>
           <span className="event-time">{formatDate(alert.timestamp)}</span>
         </div>
-        <div className="event-message">{alert.message}</div>
+        <div className="event-message">{message}</div>
         <div className="event-identity">{deriveAlertContainerLine(alert)}</div>
         {changeLine && <div className="event-change">{changeLine}</div>}
         {alert.exit_code != null && <div className="event-meta">Exit code: {alert.exit_code}</div>}
