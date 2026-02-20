@@ -267,6 +267,17 @@ const deriveAlertContainerLine = (alert: AlertItem) => {
   return `${container} ${id}`.trim()
 }
 
+const parseAlertRestartCount = (alert: AlertItem) => {
+  if (!alert.details) return null
+  try {
+    const parsed = JSON.parse(alert.details) as { restart_count?: number }
+    if (typeof parsed.restart_count !== 'number' || parsed.restart_count <= 0) return null
+    return parsed.restart_count
+  } catch {
+    return null
+  }
+}
+
 const deriveDerivedStatus = (container: Container) => {
   if (container.restart_loop) {
     return {
@@ -721,9 +732,6 @@ export default function App() {
           <AllAlertsFeed
             alerts={alerts}
             total={alertsTotal}
-            restartCounts={Object.fromEntries(
-              containers.map((item) => [item.name, item.restart_streak]),
-            )}
             page={alertsPage}
             onLoadMore={loadAlerts}
             error={alertsError}
@@ -1046,22 +1054,13 @@ function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllE
 interface AllAlertsProps {
   alerts: AlertItem[]
   total: number
-  restartCounts: Record<string, number>
   page: PageState
   onLoadMore: () => Promise<void>
   error: string | null
   onRetry: () => void
 }
 
-function AllAlertsFeed({
-  alerts,
-  total,
-  restartCounts,
-  page,
-  onLoadMore,
-  error,
-  onRetry,
-}: AllAlertsProps) {
+function AllAlertsFeed({ alerts, total, page, onLoadMore, error, onRetry }: AllAlertsProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const rowHeight = useDynamicRowHeight({ defaultRowHeight: 136 })
   const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
@@ -1140,12 +1139,11 @@ function AllAlertsFeed({
         style={style}
         ariaAttributes={ariaAttributes}
         alerts={alerts}
-        restartCounts={restartCounts}
         onMeasured={handleRowMeasured}
         rowHeight={rowHeight}
       />
     ),
-    [alerts, handleRowMeasured, restartCounts, rowHeight],
+    [alerts, handleRowMeasured, rowHeight],
   )
 
   return (
@@ -1257,20 +1255,11 @@ interface AlertRowProps {
     role: 'listitem'
   }
   alerts: AlertItem[]
-  restartCounts: Record<string, number>
   onMeasured: () => void
   rowHeight: ReturnType<typeof useDynamicRowHeight>
 }
 
-function AlertRow({
-  index,
-  style,
-  ariaAttributes,
-  alerts,
-  restartCounts,
-  onMeasured,
-  rowHeight,
-}: AlertRowProps) {
+function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight }: AlertRowProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const notifiedRef = useRef(false)
 
@@ -1290,12 +1279,8 @@ function AlertRow({
   const changeLine = deriveAlertChangeLine(alert)
   let message = alert.message
   if (alert.type === 'restart_loop') {
-    const current = restartCounts[alert.container]
-    if (typeof current === 'number' && current > 0) {
-      message = `Restart loop detected (${String(current)} restarts)`
-    } else {
-      message = 'Restart loop detected'
-    }
+    const count = parseAlertRestartCount(alert)
+    message = count ? `Restart loop detected (${String(count)} restarts)` : 'Restart loop detected'
   }
   return (
     <div
