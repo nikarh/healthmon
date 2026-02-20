@@ -652,8 +652,17 @@ body {
   .container-main {
     grid-template-columns: auto 1fr;
     column-gap: 12px;
-    row-gap: 6px;
+    row-gap: 2px;
     align-items: start;
+  }
+
+  .status-dot {
+    align-self: start;
+    margin-top: 6px;
+  }
+
+  .image-name {
+    margin-bottom: 0;
   }
 
   .container-side {
@@ -662,7 +671,7 @@ body {
     text-align: left;
     min-width: 0;
     width: 100%;
-    gap: 6px;
+    gap: 3px;
   }
 }
 
@@ -679,7 +688,7 @@ body {
   .container-main {
     padding: 12px 12px;
     column-gap: 12px;
-    row-gap: 3px;
+    row-gap: 2px;
   }
 
   .status-dot {
@@ -708,7 +717,7 @@ body {
     text-align: left;
     min-width: 0;
     width: 100%;
-    gap: 4px;
+    gap: 3px;
   }
 
   .truncate-id {
