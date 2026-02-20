@@ -212,7 +212,8 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 	}
 	info := m.inspectToContainer(inspect.Container)
 	info.Name = name
-	if !hasAutoRestartPolicy(inspect.Container) {
+	autoRestart := hasAutoRestartPolicy(inspect.Container)
+	if !autoRestart {
 		info.RestartLoop = false
 		info.RestartStreak = 0
 		m.restarts.reset(name)
@@ -221,6 +222,10 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 		info.RegisteredAt = existing.RegisteredAt
 		if info.StartedAt.IsZero() {
 			info.StartedAt = existing.StartedAt
+		}
+		if autoRestart {
+			info.RestartLoop = existing.RestartLoop
+			info.RestartStreak = existing.RestartStreak
 		}
 	}
 	if info.RegisteredAt.IsZero() {
