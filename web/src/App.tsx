@@ -140,8 +140,8 @@ const formatRelativeTime = (val: string) => {
 }
 
 const displayStatus = (container: Container) => {
-  const status = container.status?.toLowerCase() ?? ''
-  const health = container.health_status?.toLowerCase() ?? ''
+  const status = container.status.toLowerCase()
+  const health = container.health_status.toLowerCase()
   if (status === 'running' && health === 'healthy') {
     return 'healthy'
   }
@@ -234,15 +234,15 @@ const deriveDerivedStatus = (container: Container) => {
   if (container.restart_loop) {
     return {
       label: 'Restart loop',
-      detail: `${container.restart_streak || 0} restarts`,
+      detail: `${String(container.restart_streak)} restarts`,
       severity: 'sev-red',
     }
   }
-  const health = container.health_status?.toLowerCase() ?? ''
+  const health = container.health_status.toLowerCase()
   if (health === 'unhealthy') {
     return {
       label: 'Unhealthy',
-      detail: `${container.health_failing_streak || 0} failed checks`,
+      detail: `${String(container.health_failing_streak)} failed checks`,
       severity: 'sev-red',
     }
   }
@@ -470,27 +470,29 @@ export default function App() {
         setFlash((prev) => ({ ...prev, [update.container.name]: false }))
       }, 800)
 
-      if (update.event && update.event.id > 0) {
+      const eventUpdate = update.event
+      if (eventUpdate && eventUpdate.id > 0) {
         setEvents((prev) => {
           if (!(expanded[update.container.name] ?? false)) return prev
           const current = prev[update.container.name] ?? []
-          if (current.some((item) => item.id === update.event?.id)) return prev
+          if (current.some((item) => item.id === eventUpdate.id)) return prev
           return {
             ...prev,
-            [update.container.name]: [update.event, ...current],
+            [update.container.name]: [eventUpdate, ...current],
           }
         })
 
         setAllEvents((prev) => {
-          if (prev.some((item) => item.id === update.event?.id)) return prev
-          return [update.event, ...prev]
+          if (prev.some((item) => item.id === eventUpdate.id)) return prev
+          return [eventUpdate, ...prev]
         })
       }
 
-      if (update.alert && update.alert.id > 0) {
+      const alertUpdate = update.alert
+      if (alertUpdate && alertUpdate.id > 0) {
         setAlerts((prev) => {
-          if (prev.some((item) => item.id === update.alert?.id)) return prev
-          return [update.alert, ...prev]
+          if (prev.some((item) => item.id === alertUpdate.id)) return prev
+          return [alertUpdate, ...prev]
         })
       }
     }
@@ -780,7 +782,7 @@ function ContainerRow({
                   <p>Retries: {container.healthcheck.retries}</p>
                   <p>
                     Test:{' '}
-                    {container.healthcheck.test && container.healthcheck.test.length
+                    {container.healthcheck.test.length > 0
                       ? container.healthcheck.test.join(' ')
                       : '—'}
                   </p>

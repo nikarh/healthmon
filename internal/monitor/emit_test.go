@@ -76,7 +76,7 @@ func TestEmitPrefersContainerID(t *testing.T) {
 	server := api.NewServer(st, api.NewBroadcaster(), api.WSOptions{})
 	mon := New(config.Config{}, st, server)
 
-	mon.emit(ctx, store.Event{
+	mon.emitEvent(ctx, store.Event{
 		Container:   "imapsync",
 		ContainerID: "aaa111",
 		Type:        "started",

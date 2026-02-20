@@ -761,7 +761,7 @@ func shouldAlertNoRestartPolicyFailure(reason string, exitCode *int, inspect con
 	if inspect.HostConfig == nil {
 		return false
 	}
-	policy := strings.ToLower(strings.TrimSpace(inspect.HostConfig.RestartPolicy.Name))
+	policy := strings.ToLower(strings.TrimSpace(string(inspect.HostConfig.RestartPolicy.Name)))
 	if policy != "" && policy != "no" {
 		return false
 	}
