@@ -27,7 +27,7 @@ func (s *Store) Load(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, restart_loop, restart_streak, healthcheck FROM containers`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers`)
 	if err != nil {
 		return err
 	}
@@ -45,11 +45,13 @@ func (s *Store) Load(ctx context.Context) error {
 		var lastEventID sql.NullInt64
 		var healthStatus string
 		var healthFailingStreak int
+		var unhealthySince string
 		var restartLoop int
 		var restartStreak int
+		var restartLoopSince string
 		var healthcheck sql.NullString
 
-		if err := rows.Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &c.Status, &c.Role, &capsJSON, &readOnly, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &restartLoop, &restartStreak, &healthcheck); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &c.Status, &c.Role, &capsJSON, &readOnly, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck); err != nil {
 			return err
 		}
 		if err := json.Unmarshal([]byte(capsJSON), &c.Caps); err != nil {
@@ -66,8 +68,10 @@ func (s *Store) Load(ctx context.Context) error {
 		c.Present = present == 1
 		c.HealthStatus = healthStatus
 		c.HealthFailingStreak = healthFailingStreak
+		c.UnhealthySince = parseTime(unhealthySince)
 		c.RestartLoop = restartLoop == 1
 		c.RestartStreak = restartStreak
+		c.RestartLoopSince = parseTime(restartLoopSince)
 		if parsed, err := parseHealthcheck(healthcheck); err != nil {
 			return err
 		} else {
@@ -126,11 +130,13 @@ func (s *Store) GetContainerByName(ctx context.Context, name string) (Container,
 	var lastEventID sql.NullInt64
 	var healthStatus string
 	var healthFailingStreak int
+	var unhealthySince string
 	var restartLoop int
 	var restartStreak int
+	var restartLoopSince string
 	var healthcheck sql.NullString
 
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, restart_loop, restart_streak, healthcheck FROM containers WHERE name = ?`, name).Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &c.Status, &c.Role, &capsJSON, &readOnly, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &restartLoop, &restartStreak, &healthcheck)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers WHERE name = ?`, name).Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &c.Status, &c.Role, &capsJSON, &readOnly, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck)
 	if err == sql.ErrNoRows {
 		return Container{}, false, nil
 	}
@@ -151,8 +157,10 @@ func (s *Store) GetContainerByName(ctx context.Context, name string) (Container,
 	c.Present = present == 1
 	c.HealthStatus = healthStatus
 	c.HealthFailingStreak = healthFailingStreak
+	c.UnhealthySince = parseTime(unhealthySince)
 	c.RestartLoop = restartLoop == 1
 	c.RestartStreak = restartStreak
+	c.RestartLoopSince = parseTime(restartLoopSince)
 	if parsed, err := parseHealthcheck(healthcheck); err != nil {
 		return Container{}, false, err
 	} else {
@@ -193,11 +201,13 @@ func (s *Store) GetContainerByContainerID(ctx context.Context, containerID strin
 	var lastEventID sql.NullInt64
 	var healthStatus string
 	var healthFailingStreak int
+	var unhealthySince string
 	var restartLoop int
 	var restartStreak int
+	var restartLoopSince string
 	var healthcheck sql.NullString
 
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, restart_loop, restart_streak, healthcheck FROM containers WHERE container_id = ?`, containerID).Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &c.Status, &c.Role, &capsJSON, &readOnly, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &restartLoop, &restartStreak, &healthcheck)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers WHERE container_id = ?`, containerID).Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &c.Status, &c.Role, &capsJSON, &readOnly, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck)
 	if err == sql.ErrNoRows {
 		return Container{}, false, nil
 	}
@@ -218,8 +228,10 @@ func (s *Store) GetContainerByContainerID(ctx context.Context, containerID strin
 	c.Present = present == 1
 	c.HealthStatus = healthStatus
 	c.HealthFailingStreak = healthFailingStreak
+	c.UnhealthySince = parseTime(unhealthySince)
 	c.RestartLoop = restartLoop == 1
 	c.RestartStreak = restartStreak
+	c.RestartLoopSince = parseTime(restartLoopSince)
 	if parsed, err := parseHealthcheck(healthcheck); err != nil {
 		return Container{}, false, err
 	} else {
@@ -288,8 +300,8 @@ func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 
 	var id int64
 	err = s.db.QueryRowContext(ctx, `
-INSERT INTO containers (name, container_id, image, image_tag, image_id, created_at_container, first_seen_at, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, restart_loop, restart_streak, healthcheck)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO containers (name, container_id, image, image_tag, image_id, created_at_container, first_seen_at, registered_at, started_at, status, role, caps, read_only, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET
   container_id=excluded.container_id,
   image=excluded.image,
@@ -309,11 +321,13 @@ ON CONFLICT(name) DO UPDATE SET
   present=excluded.present,
   health_status=excluded.health_status,
   health_failing_streak=excluded.health_failing_streak,
+  unhealthy_since=excluded.unhealthy_since,
   restart_loop=excluded.restart_loop,
   restart_streak=excluded.restart_streak,
+  restart_loop_since=excluded.restart_loop_since,
   healthcheck=excluded.healthcheck
 RETURNING id
-`, c.Name, c.ContainerID, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.RegisteredAt), formatTime(c.RegisteredAt), formatTime(c.StartedAt), c.Status, c.Role, string(capsJSON), readOnly, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present, c.HealthStatus, c.HealthFailingStreak, restartLoop, c.RestartStreak, healthcheckJSON).Scan(&id)
+`, c.Name, c.ContainerID, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.RegisteredAt), formatTime(c.RegisteredAt), formatTime(c.StartedAt), c.Status, c.Role, string(capsJSON), readOnly, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present, c.HealthStatus, c.HealthFailingStreak, formatTime(c.UnhealthySince), restartLoop, c.RestartStreak, formatTime(c.RestartLoopSince), healthcheckJSON).Scan(&id)
 	if err != nil {
 		return err
 	}
@@ -783,6 +797,8 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 	info.RegisteredAt = oldContainer.RegisteredAt
 	info.StartedAt = oldContainer.StartedAt
 	info.LastEventID = oldContainer.LastEventID
+	info.UnhealthySince = oldContainer.UnhealthySince
+	info.RestartLoopSince = oldContainer.RestartLoopSince
 	info.Present = true
 	if info.Role == "" {
 		info.Role = oldContainer.Role
@@ -793,7 +809,7 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 	s.mu.RUnlock()
 
 	if !hasTarget {
-		if _, err := s.db.ExecContext(ctx, `UPDATE containers SET name = ?, container_id = ?, image = ?, image_tag = ?, image_id = ?, created_at_container = ?, registered_at = ?, started_at = ?, status = ?, role = ?, caps = ?, read_only = ?, user = ?, last_event_id = ?, updated_at = ?, present = 1, health_status = ?, health_failing_streak = ?, restart_loop = ?, restart_streak = ?, healthcheck = ? WHERE name = ?`,
+		if _, err := s.db.ExecContext(ctx, `UPDATE containers SET name = ?, container_id = ?, image = ?, image_tag = ?, image_id = ?, created_at_container = ?, registered_at = ?, started_at = ?, status = ?, role = ?, caps = ?, read_only = ?, user = ?, last_event_id = ?, updated_at = ?, present = 1, health_status = ?, health_failing_streak = ?, unhealthy_since = ?, restart_loop = ?, restart_streak = ?, restart_loop_since = ?, healthcheck = ? WHERE name = ?`,
 			newName,
 			info.ContainerID,
 			info.Image,
@@ -811,8 +827,10 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 			formatTime(info.UpdatedAt),
 			info.HealthStatus,
 			info.HealthFailingStreak,
+			formatTime(info.UnhealthySince),
 			boolToInt(info.RestartLoop),
 			info.RestartStreak,
+			formatTime(info.RestartLoopSince),
 			nullStr(mustHealthcheck(info.Healthcheck)),
 			oldName,
 		); err != nil {
@@ -831,7 +849,7 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 		return err
 	}
 
-	if _, err := s.db.ExecContext(ctx, `UPDATE containers SET container_id = ?, image = ?, image_tag = ?, image_id = ?, created_at_container = ?, registered_at = ?, started_at = ?, status = ?, role = ?, caps = ?, read_only = ?, user = ?, updated_at = ?, present = 1, health_status = ?, health_failing_streak = ?, restart_loop = ?, restart_streak = ?, healthcheck = ? WHERE id = ?`,
+	if _, err := s.db.ExecContext(ctx, `UPDATE containers SET container_id = ?, image = ?, image_tag = ?, image_id = ?, created_at_container = ?, registered_at = ?, started_at = ?, status = ?, role = ?, caps = ?, read_only = ?, user = ?, updated_at = ?, present = 1, health_status = ?, health_failing_streak = ?, unhealthy_since = ?, restart_loop = ?, restart_streak = ?, restart_loop_since = ?, healthcheck = ? WHERE id = ?`,
 		info.ContainerID,
 		info.Image,
 		info.ImageTag,
@@ -847,8 +865,10 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 		formatTime(info.UpdatedAt),
 		info.HealthStatus,
 		info.HealthFailingStreak,
+		formatTime(info.UnhealthySince),
 		boolToInt(info.RestartLoop),
 		info.RestartStreak,
+		formatTime(info.RestartLoopSince),
 		nullStr(mustHealthcheck(info.Healthcheck)),
 		targetContainer.ID,
 	); err != nil {
@@ -878,8 +898,10 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 		c.Present = true
 		c.HealthStatus = info.HealthStatus
 		c.HealthFailingStreak = info.HealthFailingStreak
+		c.UnhealthySince = info.UnhealthySince
 		c.RestartLoop = info.RestartLoop
 		c.RestartStreak = info.RestartStreak
+		c.RestartLoopSince = info.RestartLoopSince
 		c.Healthcheck = info.Healthcheck
 		if latestID > 0 {
 			c.LastEventID = latestID

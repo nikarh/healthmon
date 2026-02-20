@@ -22,8 +22,10 @@ type Container struct {
 	Present             bool
 	HealthStatus        string
 	HealthFailingStreak int
+	UnhealthySince      time.Time
 	RestartLoop         bool
 	RestartStreak       int
+	RestartLoopSince    time.Time
 	Healthcheck         *Healthcheck
 }
 

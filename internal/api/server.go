@@ -275,8 +275,10 @@ type ContainerResponse struct {
 	Present             bool               `json:"present"`
 	HealthStatus        string             `json:"health_status"`
 	HealthFailingStreak int                `json:"health_failing_streak"`
+	UnhealthySince      string             `json:"unhealthy_since"`
 	RestartLoop         bool               `json:"restart_loop"`
 	RestartStreak       int                `json:"restart_streak"`
+	RestartLoopSince    string             `json:"restart_loop_since"`
 	Healthcheck         *store.Healthcheck `json:"healthcheck"`
 }
 
@@ -355,8 +357,10 @@ func toContainerResponse(c store.Container, lastEvent *EventResponse) ContainerR
 		Present:             c.Present,
 		HealthStatus:        c.HealthStatus,
 		HealthFailingStreak: c.HealthFailingStreak,
+		UnhealthySince:      c.UnhealthySince.UTC().Format("2006-01-02T15:04:05Z"),
 		RestartLoop:         c.RestartLoop,
 		RestartStreak:       c.RestartStreak,
+		RestartLoopSince:    c.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
 		Healthcheck:         c.Healthcheck,
 	}
 }
