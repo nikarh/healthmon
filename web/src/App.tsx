@@ -12,7 +12,8 @@ interface Container {
   image_tag: string
   image_id: string
   created_at: string
-  first_seen_at: string
+  registered_at: string
+  started_at: string
   status: string
   role: string
   caps: string[]
@@ -20,6 +21,20 @@ interface Container {
   user: string
   last_event: EventItem | null
   present: boolean
+  health_status: string
+  health_failing_streak: number
+  restart_loop: boolean
+  restart_streak: number
+  healthcheck: Healthcheck | null
+}
+
+interface Healthcheck {
+  test: string[]
+  interval: string
+  timeout: string
+  start_period: string
+  start_interval: string
+  retries: number
 }
 
 interface EventItem {
@@ -37,11 +52,31 @@ interface EventItem {
   new_image_id: string
   reason: string
   details: string
+  exit_code?: number | null
+}
+
+interface AlertItem {
+  id: number
+  container_pk: number
+  container: string
+  container_id: string
+  type: string
+  severity: string
+  message: string
+  timestamp: string
+  old_image: string
+  new_image: string
+  old_image_id: string
+  new_image_id: string
+  reason: string
+  details: string
+  exit_code?: number | null
 }
 
 interface EventUpdate {
   container: Container
-  event: EventItem
+  event?: EventItem | null
+  alert?: AlertItem | null
 }
 
 interface PageState {
@@ -51,12 +86,12 @@ interface PageState {
 }
 
 const PAGE_SIZE = 20
-type ViewMode = 'containers' | 'events'
+type ViewMode = 'containers' | 'events' | 'alerts'
 
 const statusClass = (status: string) => {
   const s = status.toLowerCase()
+  if (s === 'healthy') return 'status-running'
   if (s === 'running') return 'status-running'
-  if (s === 'crashed' || s === 'oom') return 'status-error'
   if (s === 'exited' || s === 'dead') return 'status-down'
   return 'status-warn'
 }
@@ -79,6 +114,38 @@ const formatDate = (val: string) => {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+const formatRelativeTime = (val: string) => {
+  if (!val) return '—'
+  if (val.startsWith('0001-01-01')) return '—'
+  const date = new Date(val)
+  if (Number.isNaN(date.getTime())) return '—'
+  const diff = date.getTime() - Date.now()
+  const abs = Math.abs(diff)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+  const month = 30 * day
+  const year = 365 * day
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  if (abs >= year) return rtf.format(Math.round(diff / year), 'year')
+  if (abs >= month) return rtf.format(Math.round(diff / month), 'month')
+  if (abs >= week) return rtf.format(Math.round(diff / week), 'week')
+  if (abs >= day) return rtf.format(Math.round(diff / day), 'day')
+  if (abs >= hour) return rtf.format(Math.round(diff / hour), 'hour')
+  if (abs >= minute) return rtf.format(Math.round(diff / minute), 'minute')
+  return rtf.format(Math.round(diff / 1000), 'second')
+}
+
+const displayStatus = (container: Container) => {
+  const status = container.status?.toLowerCase() ?? ''
+  const health = container.health_status?.toLowerCase() ?? ''
+  if (status === 'running' && health === 'healthy') {
+    return 'healthy'
+  }
+  return container.status
 }
 
 const shortId = (val: string, max = 12) => {
@@ -131,6 +198,60 @@ const deriveContainerLine = (event: EventItem) => {
   return `${container} ${id}`.trim()
 }
 
+const deriveAlertTitle = (alert: AlertItem) => {
+  const reason = singleWord(alert.reason)
+  if (reason) return toTitle(reason)
+  const type = singleWord(alert.type)
+  if (type) return toTitle(type)
+  if (alert.type) return toTitle(alert.type)
+  return 'ALERT'
+}
+
+const deriveAlertChangeLine = (alert: AlertItem) => {
+  if (alert.old_image || alert.new_image) {
+    return `${alert.old_image} → ${alert.new_image}`.trim()
+  }
+  const message = alert.message || ''
+  if (!message) return ''
+  if (message.includes('->')) {
+    return message
+  }
+  const regex = /from\\s+(.+?)\\s+to\\s+(.+)/i
+  const match = regex.exec(message)
+  if (match) {
+    return `${match[1]} → ${match[2]}`
+  }
+  return ''
+}
+
+const deriveAlertContainerLine = (alert: AlertItem) => {
+  const container = alert.container || ''
+  const id = alert.container_id ? `(${shortId(alert.container_id)})` : ''
+  return `${container} ${id}`.trim()
+}
+
+const deriveDerivedStatus = (container: Container) => {
+  if (container.restart_loop) {
+    return {
+      label: 'Restart loop',
+      detail: `${container.restart_streak || 0} restarts`,
+      severity: 'sev-red',
+    }
+  }
+  const health = container.health_status?.toLowerCase() ?? ''
+  if (health === 'unhealthy') {
+    return {
+      label: 'Unhealthy',
+      detail: `${container.health_failing_streak || 0} failed checks`,
+      severity: 'sev-red',
+    }
+  }
+  if (health === 'healthy') {
+    return { label: 'Clear', detail: 'Healthy', severity: 'sev-green' }
+  }
+  return { label: 'Clear', detail: 'No healthcheck', severity: 'sev-blue' }
+}
+
 export default function App() {
   const [containers, setContainers] = useState<Container[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean | undefined>>({})
@@ -142,6 +263,9 @@ export default function App() {
   const [allEvents, setAllEvents] = useState<EventItem[]>([])
   const [allEventsPage, setAllEventsPage] = useState<PageState>({ loading: false, done: false })
   const [allEventsError, setAllEventsError] = useState<string | null>(null)
+  const [alerts, setAlerts] = useState<AlertItem[]>([])
+  const [alertsPage, setAlertsPage] = useState<PageState>({ loading: false, done: false })
+  const [alertsError, setAlertsError] = useState<string | null>(null)
 
   const sortedContainers = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -256,6 +380,40 @@ export default function App() {
     }
   }, [allEventsPage.beforeId, allEventsPage.done, allEventsPage.loading])
 
+  const loadAlerts = useCallback(async () => {
+    if (alertsPage.loading || alertsPage.done) return
+    setAlertsError(null)
+    setAlertsPage((prev) => ({
+      ...prev,
+      loading: true,
+    }))
+    const beforeId = alertsPage.beforeId
+    const query = new URLSearchParams({
+      limit: PAGE_SIZE.toString(),
+    })
+    if (beforeId) {
+      query.set('before_id', beforeId.toString())
+    }
+    try {
+      const res = await fetch(`/api/alerts?${query.toString()}`)
+      if (!res.ok) {
+        setAlertsError('Unable to load alerts. Check connection and retry.')
+        setAlertsPage((prev) => ({ ...prev, loading: false, done: true }))
+        return
+      }
+      const data = (await res.json()) as AlertItem[]
+      setAlerts((prev) => [...prev, ...data])
+      setAlertsPage({
+        beforeId: data.length ? data[data.length - 1].id : beforeId,
+        loading: false,
+        done: data.length < PAGE_SIZE,
+      })
+    } catch {
+      setAlertsError('Unable to load alerts. Check connection and retry.')
+      setAlertsPage((prev) => ({ ...prev, loading: false, done: true }))
+    }
+  }, [alertsPage.beforeId, alertsPage.done, alertsPage.loading])
+
   const toggleExpanded = useCallback(
     (name: string) => {
       const nextExpanded = !(expanded[name] ?? false)
@@ -312,11 +470,11 @@ export default function App() {
         setFlash((prev) => ({ ...prev, [update.container.name]: false }))
       }, 800)
 
-      if (update.event.id > 0) {
+      if (update.event && update.event.id > 0) {
         setEvents((prev) => {
           if (!(expanded[update.container.name] ?? false)) return prev
           const current = prev[update.container.name] ?? []
-          if (current.some((item) => item.id === update.event.id)) return prev
+          if (current.some((item) => item.id === update.event?.id)) return prev
           return {
             ...prev,
             [update.container.name]: [update.event, ...current],
@@ -324,8 +482,15 @@ export default function App() {
         })
 
         setAllEvents((prev) => {
-          if (prev.some((item) => item.id === update.event.id)) return prev
+          if (prev.some((item) => item.id === update.event?.id)) return prev
           return [update.event, ...prev]
+        })
+      }
+
+      if (update.alert && update.alert.id > 0) {
+        setAlerts((prev) => {
+          if (prev.some((item) => item.id === update.alert?.id)) return prev
+          return [update.alert, ...prev]
         })
       }
     }
@@ -379,6 +544,18 @@ export default function App() {
             }}
           >
             Events
+          </button>
+          <button
+            className={`view-tab ${view === 'alerts' ? 'active' : ''}`}
+            type="button"
+            onClick={() => {
+              setView('alerts')
+              if (alerts.length === 0 && !alertsPage.loading && !alertsPage.done) {
+                void loadAlerts()
+              }
+            }}
+          >
+            Alerts
           </button>
         </div>
 
@@ -465,6 +642,20 @@ export default function App() {
             }}
           />
         )}
+
+        {view === 'alerts' && (
+          <AllAlertsFeed
+            alerts={alerts}
+            page={alertsPage}
+            onLoadMore={loadAlerts}
+            error={alertsError}
+            onRetry={() => {
+              setAlertsError(null)
+              setAlertsPage((prev) => ({ ...prev, done: false }))
+              void loadAlerts()
+            }}
+          />
+        )}
       </section>
     </div>
   )
@@ -490,6 +681,8 @@ function ContainerRow({
   onLoadMore,
 }: RowProps) {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const statusText = displayStatus(container)
+  const derivedStatus = deriveDerivedStatus(container)
 
   useEffect(() => {
     if (!expanded || page.done || page.loading) return undefined
@@ -521,31 +714,28 @@ function ContainerRow({
           onToggle(container.name)
         }}
       >
-        <div className={`status-dot ${statusClass(container.status)}`} />
+        <div className={`status-dot ${statusClass(statusText)}`} />
         <div className="container-info">
           <div className="name-row">
             <span className="name container-name">{container.name}</span>
-            <span className="status-pill">{container.status}</span>
+            <span className="status-pill">{statusText}</span>
           </div>
           <div className="meta">
             <span className="image-name">
               {container.image}:{container.image_tag}
             </span>
-            <span>Created: {formatDate(container.created_at)}</span>
-            <span>First seen: {formatDate(container.first_seen_at)}</span>
           </div>
         </div>
-        {container.last_event && (
-          <div className="last-event">
-            <div className="event-summary">
-              <span className={`event-dot ${severityClass(container.last_event.severity)}`} />
-              <div>
-                <div className="event-type">{container.last_event.type}</div>
-                <div className="event-message">{container.last_event.message}</div>
-              </div>
+        <div className="container-side">
+          <div className="derived-status">
+            <span className={`event-dot ${derivedStatus.severity}`} />
+            <div>
+              <div className="event-type">{derivedStatus.label}</div>
+              <div className="event-message">{derivedStatus.detail}</div>
             </div>
           </div>
-        )}
+          <div className="started-time">Started: {formatRelativeTime(container.started_at)}</div>
+        </div>
       </button>
 
       {expanded && (
@@ -553,6 +743,9 @@ function ContainerRow({
           <div className="details-grid">
             <div>
               <h3>Runtime</h3>
+              <p>Registered: {formatRelativeTime(container.registered_at)}</p>
+              <p>Created: {formatRelativeTime(container.created_at)}</p>
+              <p>Started: {formatRelativeTime(container.started_at)}</p>
               <p className={container.user === '0:0' ? 'warn-text' : undefined}>
                 User: {container.user}
                 {container.user === '0:0' && <span className="warn-badge">!</span>}
@@ -572,6 +765,28 @@ function ContainerRow({
               <h3>Capabilities</h3>
               <p className="caps">{container.caps.length ? container.caps.join(', ') : 'none'}</p>
             </div>
+            <div>
+              <h3>Health</h3>
+              <p>Status: {container.health_status || 'none'}</p>
+              <p>Failing streak: {container.health_failing_streak || 0}</p>
+              <p>Restart loop: {container.restart_loop ? 'yes' : 'no'}</p>
+              <p>Restart streak: {container.restart_streak || 0}</p>
+              {container.healthcheck && (
+                <>
+                  <p>Interval: {container.healthcheck.interval || '—'}</p>
+                  <p>Timeout: {container.healthcheck.timeout || '—'}</p>
+                  <p>Start period: {container.healthcheck.start_period || '—'}</p>
+                  <p>Start interval: {container.healthcheck.start_interval || '—'}</p>
+                  <p>Retries: {container.healthcheck.retries}</p>
+                  <p>
+                    Test:{' '}
+                    {container.healthcheck.test && container.healthcheck.test.length
+                      ? container.healthcheck.test.join(' ')
+                      : '—'}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
 
           {(events.length > 0 || page.loading || !page.done) && (
@@ -587,13 +802,16 @@ function ContainerRow({
                     <div className="event-body">
                       <div className="event-top">
                         <span className="event-title">{deriveEventTitle(event)}</span>
-                        <span className="event-time">{formatDate(event.timestamp)}</span>
+                        <span className="event-time">{formatRelativeTime(event.timestamp)}</span>
                       </div>
                       <div className="event-identity">{deriveContainerLine(event)}</div>
                       {(() => {
                         const changeLine = deriveChangeLine(event)
                         return changeLine ? <div className="event-change">{changeLine}</div> : null
                       })()}
+                      {event.exit_code != null && (
+                        <div className="event-meta">Exit code: {event.exit_code}</div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -739,6 +957,137 @@ function AllEventsFeed({ events, page, onLoadMore, error, onRetry }: AllEventsPr
   )
 }
 
+interface AllAlertsProps {
+  alerts: AlertItem[]
+  page: PageState
+  onLoadMore: () => Promise<void>
+  error: string | null
+  onRetry: () => void
+}
+
+function AllAlertsFeed({ alerts, page, onLoadMore, error, onRetry }: AllAlertsProps) {
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 136 })
+  const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
+  const handleItemsRendered = useCallback(
+    ({ stopIndex }: { stopIndex: number }) => {
+      if (page.loading || page.done || error) return
+      if (stopIndex >= alerts.length - 4) {
+        void onLoadMore()
+      }
+    },
+    [alerts.length, onLoadMore, page.done, page.loading, error],
+  )
+
+  const handleRowMeasured = useCallback(() => {
+    setListSize((prev) => ({ ...prev }))
+  }, [])
+
+  useLayoutEffect(() => {
+    const element = listRef.current
+    if (!element) return undefined
+
+    const updateSize = () => {
+      const listRect = element.getBoundingClientRect()
+      const sectionElement = element.closest('.container-list')
+      const sectionStyle = sectionElement ? window.getComputedStyle(sectionElement) : null
+      const sectionPaddingBottom = sectionStyle
+        ? Number.parseFloat(sectionStyle.paddingBottom) || 0
+        : 0
+      const viewportHeight = document.documentElement.clientHeight
+      const maxHeight = Math.max(200, viewportHeight - listRect.top - sectionPaddingBottom - 1)
+      const width = listRect.width
+      if (!maxHeight || !width) return
+      setListSize({ width, maxHeight })
+    }
+
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(element)
+    window.addEventListener('resize', updateSize)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateSize)
+    }
+  }, [])
+
+  const listHeight = useMemo(() => {
+    if (alerts.length === 0 || listSize.maxHeight === 0) return 0
+    const average = rowHeight.getAverageRowHeight() || 136
+    let total = 0
+    for (let index = 0; index < alerts.length; index += 1) {
+      total += rowHeight.getRowHeight(index) ?? average
+      if (total >= listSize.maxHeight) {
+        return listSize.maxHeight
+      }
+    }
+    return Math.min(total, listSize.maxHeight)
+  }, [alerts.length, listSize.maxHeight, rowHeight])
+
+  const rowComponent = useCallback(
+    ({
+      index,
+      style,
+      ariaAttributes,
+    }: {
+      index: number
+      style: CSSProperties
+      ariaAttributes: {
+        'aria-posinset': number
+        'aria-setsize': number
+        role: 'listitem'
+      }
+    }) => (
+      <AlertRow
+        index={index}
+        style={style}
+        ariaAttributes={ariaAttributes}
+        alerts={alerts}
+        onMeasured={handleRowMeasured}
+        rowHeight={rowHeight}
+      />
+    ),
+    [alerts, handleRowMeasured, rowHeight],
+  )
+
+  return (
+    <div className="events-feed">
+      <div className="events-header">
+        <h3>All alerts</h3>
+        <span>{alerts.length} loaded</span>
+      </div>
+      <div ref={listRef} className="event-list feed-list">
+        {alerts.length > 0 && listHeight > 0 && listSize.width > 0 && (
+          <List
+            style={{ height: listHeight, width: listSize.width }}
+            rowCount={alerts.length}
+            rowHeight={rowHeight}
+            rowComponent={rowComponent}
+            rowProps={{}}
+            onRowsRendered={({ stopIndex }) => {
+              handleItemsRendered({ stopIndex })
+            }}
+            overscanCount={4}
+          />
+        )}
+      </div>
+      {error && (
+        <div className="error-state">
+          <p>{error}</p>
+          <button className="retry-button" type="button" onClick={onRetry}>
+            Retry
+          </button>
+        </div>
+      )}
+      {page.loading && <div className="loading">Loading more alerts…</div>}
+      {page.done && !error && alerts.length === 0 && (
+        <div className="empty">No alerts recorded yet.</div>
+      )}
+    </div>
+  )
+}
+
 interface EventRowProps {
   index: number
   style: CSSProperties
@@ -796,6 +1145,64 @@ function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight 
           )}
         </div>
         {changeLine && <div className="event-change">{changeLine}</div>}
+        {event.exit_code != null && <div className="event-meta">Exit code: {event.exit_code}</div>}
+      </div>
+    </div>
+  )
+}
+
+interface AlertRowProps {
+  index: number
+  style: CSSProperties
+  ariaAttributes: {
+    'aria-posinset': number
+    'aria-setsize': number
+    role: 'listitem'
+  }
+  alerts: AlertItem[]
+  onMeasured: () => void
+  rowHeight: ReturnType<typeof useDynamicRowHeight>
+}
+
+function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight }: AlertRowProps) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const notifiedRef = useRef(false)
+
+  useLayoutEffect(() => {
+    if (!ref.current) return undefined
+    const cleanup = rowHeight.observeRowElements([ref.current])
+    if (!notifiedRef.current) {
+      notifiedRef.current = true
+      onMeasured()
+    }
+    return cleanup
+  }, [rowHeight, onMeasured])
+
+  const alert = alerts[index]
+  const isLast = index === alerts.length - 1
+  const title = deriveAlertTitle(alert)
+  const changeLine = deriveAlertChangeLine(alert)
+  return (
+    <div
+      ref={ref}
+      role={ariaAttributes.role}
+      aria-posinset={ariaAttributes['aria-posinset']}
+      aria-setsize={ariaAttributes['aria-setsize']}
+      style={style}
+      className={`event-row feed-row ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'} ${
+        isLast ? 'feed-row-last' : ''
+      }`}
+    >
+      <div className={`event-dot ${severityClass(alert.severity)}`} />
+      <div className="event-body">
+        <div className="event-top">
+          <span className="event-title">{title}</span>
+          <span className="event-time">{formatDate(alert.timestamp)}</span>
+        </div>
+        <div className="event-message">{alert.message}</div>
+        <div className="event-identity">{deriveAlertContainerLine(alert)}</div>
+        {changeLine && <div className="event-change">{changeLine}</div>}
+        {alert.exit_code != null && <div className="event-meta">Exit code: {alert.exit_code}</div>}
       </div>
     </div>
   )

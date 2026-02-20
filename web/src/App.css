@@ -322,9 +322,26 @@ body {
   margin-bottom: 4px;
 }
 
-.last-event {
+.container-side {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  text-align: right;
+  min-width: 160px;
+}
+
+.derived-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.started-time {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .event-summary {
@@ -636,8 +653,9 @@ body {
     grid-template-columns: auto 1fr;
   }
 
-  .last-event {
+  .container-side {
     grid-column: 1 / -1;
+    min-width: 0;
   }
 }
 
