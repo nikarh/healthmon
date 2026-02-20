@@ -667,8 +667,8 @@ body {
 
   .container-side {
     grid-column: 2;
-    align-items: flex-start;
-    text-align: left;
+    align-items: flex-end;
+    text-align: right;
     min-width: 0;
     width: 100%;
     gap: 3px;
