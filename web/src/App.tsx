@@ -746,7 +746,6 @@ function ContainerRow({
               <h3>Runtime</h3>
               <p>Registered: {formatRelativeTime(container.registered_at)}</p>
               <p>Created: {formatRelativeTime(container.created_at)}</p>
-              <p>Started: {formatRelativeTime(container.started_at)}</p>
               <p className={container.user === '0:0' ? 'warn-text' : undefined}>
                 User: {container.user}
                 {container.user === '0:0' && <span className="warn-badge">!</span>}
