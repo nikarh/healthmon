@@ -269,19 +269,17 @@ const deriveAlertContainerLine = (alert: AlertItem) => {
 
 const deriveDerivedStatus = (container: Container) => {
   if (container.restart_loop) {
-    const badSince = formatRelativeTime(container.restart_loop_since)
     return {
       label: 'Restart loop',
-      detail: `${String(container.restart_streak)} restarts · Bad since ${badSince}`,
+      detail: `${String(container.restart_streak)} restarts`,
       severity: 'sev-red',
     }
   }
   const health = container.health_status.toLowerCase()
   if (health === 'unhealthy') {
-    const badSince = formatRelativeTime(container.unhealthy_since)
     return {
       label: 'Unhealthy',
-      detail: `${String(container.health_failing_streak)} failed checks · Bad since ${badSince}`,
+      detail: `${String(container.health_failing_streak)} failed checks`,
       severity: 'sev-red',
     }
   }
@@ -765,6 +763,11 @@ function ContainerRow({
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const statusText = displayStatus(container)
   const derivedStatus = deriveDerivedStatus(container)
+  const wentBad = container.restart_loop
+    ? formatRelativeTime(container.restart_loop_since)
+    : container.health_status.toLowerCase() === 'unhealthy'
+      ? formatRelativeTime(container.unhealthy_since)
+      : null
 
   useEffect(() => {
     if (!expanded || page.done || page.loading) return undefined
@@ -819,7 +822,10 @@ function ContainerRow({
               </div>
             </div>
           )}
-          <div className="started-time">Started: {formatRelativeTime(container.started_at)}</div>
+          <div className="time-lines">
+            <div className="started-time">Started: {formatRelativeTime(container.started_at)}</div>
+            {wentBad && <div className="started-time">Went bad: {wentBad}</div>}
+          </div>
         </div>
       </button>
 
