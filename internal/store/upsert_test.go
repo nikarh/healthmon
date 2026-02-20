@@ -29,20 +29,21 @@ func TestUpsertKeepsContainerIDAfterEvents(t *testing.T) {
 
 	now := time.Now().UTC()
 	cont := Container{
-		Name:        "imapsync",
-		ContainerID: "container-aaa",
-		Image:       "imapsync",
-		ImageTag:    "latest",
-		ImageID:     "img-imapsync",
-		CreatedAt:   now,
-		FirstSeenAt: now,
-		Status:      "running",
-		Role:        "service",
-		Caps:        []string{},
-		ReadOnly:    false,
-		User:        "0:0",
-		UpdatedAt:   now,
-		Present:     true,
+		Name:         "imapsync",
+		ContainerID:  "container-aaa",
+		Image:        "imapsync",
+		ImageTag:     "latest",
+		ImageID:      "img-imapsync",
+		CreatedAt:    now,
+		RegisteredAt: now,
+		StartedAt:    now,
+		Status:       "running",
+		Role:         "service",
+		Caps:         []string{},
+		ReadOnly:     false,
+		User:         "0:0",
+		UpdatedAt:    now,
+		Present:      true,
 	}
 
 	if err := st.UpsertContainer(ctx, cont); err != nil {

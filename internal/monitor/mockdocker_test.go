@@ -397,9 +397,17 @@ func TestMonitorReplayLinksEvents(t *testing.T) {
 			continue
 		}
 
-		update, err := readWSUpdate(ctx, wsConn)
-		if err != nil {
-			t.Fatalf("ws read: %v", err)
+		var update api.EventUpdate
+		for {
+			next, err := readWSUpdate(ctx, wsConn)
+			if err != nil {
+				t.Fatalf("ws read: %v", err)
+			}
+			if next.Event == nil {
+				continue
+			}
+			update = next
+			break
 		}
 
 		expectedName := strings.TrimPrefix(msg.Actor.Attributes["name"], "/")
