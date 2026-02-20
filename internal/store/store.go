@@ -705,6 +705,50 @@ LIMIT 1
 	return parseTime(ts), true, nil
 }
 
+func (s *Store) GetLatestRestartLoopAlertByContainerPK(ctx context.Context, containerPK int64) (Alert, bool, error) {
+	var a Alert
+	var ts string
+	var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
+	var exitCode sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, container_name, container_id, alert_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk, exit_code
+FROM alerts
+WHERE container_pk = ? AND alert_type IN ('restart_loop', 'restart_healed')
+ORDER BY id DESC
+LIMIT 1
+`, containerPK).Scan(&a.ID, &a.Container, &a.ContainerID, &a.Type, &a.Severity, &a.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &a.ContainerPK, &exitCode)
+	if err == sql.ErrNoRows {
+		return Alert{}, false, nil
+	}
+	if err != nil {
+		return Alert{}, false, err
+	}
+	a.Timestamp = parseTime(ts)
+	if oldImage.Valid {
+		a.OldImage = oldImage.String
+	}
+	if newImage.Valid {
+		a.NewImage = newImage.String
+	}
+	if oldImageID.Valid {
+		a.OldImageID = oldImageID.String
+	}
+	if newImageID.Valid {
+		a.NewImageID = newImageID.String
+	}
+	if reason.Valid {
+		a.Reason = reason.String
+	}
+	if details.Valid {
+		a.DetailsJSON = details.String
+	}
+	if exitCode.Valid {
+		val := int(exitCode.Int64)
+		a.ExitCode = &val
+	}
+	return a, true, nil
+}
+
 func (s *Store) ContainerNames() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
