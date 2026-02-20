@@ -95,14 +95,26 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 			if info.StartedAt.IsZero() {
 				info.StartedAt = existing.StartedAt
 			}
+			info.UnhealthySince = existing.UnhealthySince
+			if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
+				info.UnhealthySince = time.Now().UTC()
+			}
+			if strings.ToLower(info.HealthStatus) != "unhealthy" {
+				info.UnhealthySince = time.Time{}
+			}
 			if autoRestart {
 				info.RestartLoop = existing.RestartLoop
 				info.RestartStreak = existing.RestartStreak
+				info.RestartLoopSince = existing.RestartLoopSince
 			} else {
 				info.RestartLoop = false
 				info.RestartStreak = 0
+				info.RestartLoopSince = time.Time{}
 				m.restarts.reset(name)
 			}
+		}
+		if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
+			info.UnhealthySince = time.Now().UTC()
 		}
 		if info.RegisteredAt.IsZero() {
 			info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
@@ -183,14 +195,23 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 		if newInfo.StartedAt.IsZero() {
 			newInfo.StartedAt = existing.StartedAt
 		}
+		newInfo.UnhealthySince = existing.UnhealthySince
+		if strings.ToLower(newInfo.HealthStatus) != "unhealthy" {
+			newInfo.UnhealthySince = time.Time{}
+		}
+		newInfo.RestartLoopSince = existing.RestartLoopSince
 	} else {
 		newInfo.RegisteredAt = minTime(newInfo.CreatedAt, now)
+	}
+	if strings.ToLower(newInfo.HealthStatus) == "unhealthy" && newInfo.UnhealthySince.IsZero() {
+		newInfo.UnhealthySince = now
 	}
 
 	if has && existing.ContainerID != id {
 		m.restarts.reset(name)
 		newInfo.RestartLoop = false
 		newInfo.RestartStreak = 0
+		newInfo.RestartLoopSince = time.Time{}
 		imageChanged := existing.ImageID != newInfo.ImageID || existing.ImageTag != newInfo.ImageTag
 		if imageChanged {
 			m.emitInfo(ctx, name, id, "image_changed", fmt.Sprintf("Image changed %s -> %s", existing.Image, newInfo.Image), existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
@@ -216,6 +237,7 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 	if !autoRestart {
 		info.RestartLoop = false
 		info.RestartStreak = 0
+		info.RestartLoopSince = time.Time{}
 		m.restarts.reset(name)
 	}
 	if existing, ok := m.store.GetContainer(name); ok {
@@ -223,10 +245,18 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 		if info.StartedAt.IsZero() {
 			info.StartedAt = existing.StartedAt
 		}
+		info.UnhealthySince = existing.UnhealthySince
+		if strings.ToLower(info.HealthStatus) != "unhealthy" {
+			info.UnhealthySince = time.Time{}
+		}
 		if autoRestart {
 			info.RestartLoop = existing.RestartLoop
 			info.RestartStreak = existing.RestartStreak
+			info.RestartLoopSince = existing.RestartLoopSince
 		}
+	}
+	if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
+		info.UnhealthySince = time.Now().UTC()
 	}
 	if info.RegisteredAt.IsZero() {
 		info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
@@ -284,8 +314,17 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 		if has {
 			info.RegisteredAt = existing.RegisteredAt
 			info.StartedAt = existing.StartedAt
+			info.UnhealthySince = existing.UnhealthySince
 			info.RestartLoop = existing.RestartLoop
 			info.RestartStreak = existing.RestartStreak
+			info.RestartLoopSince = existing.RestartLoopSince
+		}
+		if strings.ToLower(info.HealthStatus) == "unhealthy" {
+			if info.UnhealthySince.IsZero() {
+				info.UnhealthySince = time.Now().UTC()
+			}
+		} else {
+			info.UnhealthySince = time.Time{}
 		}
 		if info.RegisteredAt.IsZero() {
 			info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
@@ -297,8 +336,12 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 		existing.HealthStatus = status
 		if status == "unhealthy" {
 			existing.HealthFailingStreak = prevStreak + 1
+			if existing.UnhealthySince.IsZero() {
+				existing.UnhealthySince = time.Now().UTC()
+			}
 		} else if status == "healthy" {
 			existing.HealthFailingStreak = 0
+			existing.UnhealthySince = time.Time{}
 		}
 		existing.UpdatedAt = time.Now().UTC()
 		_ = m.store.UpsertContainer(ctx, existing)
@@ -343,6 +386,13 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	if c, ok := m.store.GetContainer(name); ok {
 		c.RestartStreak = streak
 		c.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
+		if c.RestartLoop {
+			if c.RestartLoopSince.IsZero() {
+				c.RestartLoopSince = now
+			}
+		} else {
+			c.RestartLoopSince = time.Time{}
+		}
 		c.UpdatedAt = now
 		_ = m.store.UpsertContainer(ctx, c)
 	}
@@ -360,9 +410,24 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
 			info.StartedAt = existing.StartedAt
+			info.UnhealthySince = existing.UnhealthySince
+			if strings.ToLower(info.HealthStatus) != "unhealthy" {
+				info.UnhealthySince = time.Time{}
+			}
+			if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
+				info.UnhealthySince = now
+			}
+			info.RestartLoopSince = existing.RestartLoopSince
 		}
 		info.RestartLoop = hasAutoRestart && m.restarts.inLoop(name)
 		info.RestartStreak = streak
+		if info.RestartLoop {
+			if info.RestartLoopSince.IsZero() {
+				info.RestartLoopSince = now
+			}
+		} else {
+			info.RestartLoopSince = time.Time{}
+		}
 		if info.RegisteredAt.IsZero() {
 			info.RegisteredAt = minTime(info.CreatedAt, now)
 		}
@@ -397,8 +462,13 @@ func (m *Monitor) handleStop(ctx context.Context, name, id string, exitCode *int
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
 			info.StartedAt = existing.StartedAt
+			info.UnhealthySince = existing.UnhealthySince
 			info.RestartLoop = existing.RestartLoop
 			info.RestartStreak = existing.RestartStreak
+			info.RestartLoopSince = existing.RestartLoopSince
+		}
+		if strings.ToLower(info.HealthStatus) != "unhealthy" {
+			info.UnhealthySince = time.Time{}
 		}
 		if info.RegisteredAt.IsZero() {
 			info.RegisteredAt = minTime(info.CreatedAt, now)
@@ -469,6 +539,7 @@ func (m *Monitor) checkHeals(ctx context.Context) {
 		streak := c.RestartStreak
 		c.RestartLoop = false
 		c.RestartStreak = 0
+		c.RestartLoopSince = time.Time{}
 		c.UpdatedAt = now
 		_ = m.store.UpsertContainer(ctx, c)
 		m.restarts.markHealed(c.Name)
@@ -567,8 +638,10 @@ func (m *Monitor) emitEvent(ctx context.Context, e store.Event) {
 			Present:             container.Present,
 			HealthStatus:        container.HealthStatus,
 			HealthFailingStreak: container.HealthFailingStreak,
+			UnhealthySince:      container.UnhealthySince.UTC().Format("2006-01-02T15:04:05Z"),
 			RestartLoop:         container.RestartLoop,
 			RestartStreak:       container.RestartStreak,
+			RestartLoopSince:    container.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
 			Healthcheck:         container.Healthcheck,
 		},
 		Event: &api.EventResponse{
@@ -651,8 +724,10 @@ func (m *Monitor) emitAlertRecord(ctx context.Context, a store.Alert) {
 			Present:             container.Present,
 			HealthStatus:        container.HealthStatus,
 			HealthFailingStreak: container.HealthFailingStreak,
+			UnhealthySince:      container.UnhealthySince.UTC().Format("2006-01-02T15:04:05Z"),
 			RestartLoop:         container.RestartLoop,
 			RestartStreak:       container.RestartStreak,
+			RestartLoopSince:    container.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
 			Healthcheck:         container.Healthcheck,
 		},
 		Alert: &api.AlertResponse{
