@@ -868,16 +868,6 @@ function ContainerRow({
             <span className="image-name">
               {container.image}:{container.image_tag}
             </span>
-            {isTask && (
-              <>
-                <span>ID: {shortId(container.container_id)}</span>
-                <span>User: {container.user || '—'}</span>
-                <span>
-                  Mem: {formatBytes(container.memory_reservation)} /{' '}
-                  {formatBytes(container.memory_limit)}
-                </span>
-              </>
-            )}
           </div>
         </div>
         <div className="container-side">
@@ -891,16 +881,7 @@ function ContainerRow({
             </div>
           )}
           <div className="time-lines">
-            {isTask ? (
-              <>
-                <div className="started-time">
-                  Last run: {formatRelativeTime(taskLastRun(container))}
-                </div>
-                {typeof container.exit_code === 'number' && (
-                  <div className="started-time">Exit code: {container.exit_code}</div>
-                )}
-              </>
-            ) : (
+            {!isTask && (
               <>
                 <div className="started-time">
                   Started: {formatRelativeTime(container.started_at)}
