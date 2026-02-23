@@ -12,6 +12,8 @@ type Container struct {
 	CreatedAt           time.Time
 	RegisteredAt        time.Time
 	StartedAt           time.Time
+	FinishedAt          time.Time
+	ExitCode            *int
 	Status              string
 	Role                string
 	Caps                []string

@@ -245,6 +245,8 @@ type ContainerResponse struct {
 	CreatedAt           string             `json:"created_at"`
 	RegisteredAt        string             `json:"registered_at"`
 	StartedAt           string             `json:"started_at"`
+	FinishedAt          string             `json:"finished_at"`
+	ExitCode            *int               `json:"exit_code"`
 	Status              string             `json:"status"`
 	Role                string             `json:"role"`
 	Caps                []string           `json:"caps"`
@@ -327,6 +329,8 @@ func toContainerResponse(c store.Container) ContainerResponse {
 		CreatedAt:           c.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		RegisteredAt:        c.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
 		StartedAt:           c.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		FinishedAt:          formatMaybeTime(c.FinishedAt),
+		ExitCode:            c.ExitCode,
 		Status:              c.Status,
 		Role:                c.Role,
 		Caps:                c.Caps,
@@ -344,6 +348,13 @@ func toContainerResponse(c store.Container) ContainerResponse {
 		RestartLoopSince:    c.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
 		Healthcheck:         c.Healthcheck,
 	}
+}
+
+func formatMaybeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02T15:04:05Z")
 }
 
 func toEventResponse(e store.Event) *EventResponse {
