@@ -1,0 +1,2 @@
+ALTER TABLE containers ADD COLUMN memory_reservation INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE containers ADD COLUMN memory_limit INTEGER NOT NULL DEFAULT 0;

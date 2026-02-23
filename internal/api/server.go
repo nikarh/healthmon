@@ -250,6 +250,8 @@ type ContainerResponse struct {
 	Caps                []string           `json:"caps"`
 	ReadOnly            bool               `json:"read_only"`
 	NoNewPrivileges     bool               `json:"no_new_privileges"`
+	MemoryReservation   int64              `json:"memory_reservation"`
+	MemoryLimit         int64              `json:"memory_limit"`
 	User                string             `json:"user"`
 	Present             bool               `json:"present"`
 	HealthStatus        string             `json:"health_status"`
@@ -330,6 +332,8 @@ func toContainerResponse(c store.Container) ContainerResponse {
 		Caps:                c.Caps,
 		ReadOnly:            c.ReadOnly,
 		NoNewPrivileges:     c.NoNewPrivileges,
+		MemoryReservation:   c.MemoryReservation,
+		MemoryLimit:         c.MemoryLimit,
 		User:                c.User,
 		Present:             c.Present,
 		HealthStatus:        c.HealthStatus,
