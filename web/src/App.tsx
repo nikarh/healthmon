@@ -14,6 +14,8 @@ interface Container {
   created_at: string
   registered_at: string
   started_at: string
+  finished_at: string
+  exit_code?: number | null
   status: string
   role: string
   caps: string[]
@@ -185,6 +187,25 @@ const displayStatus = (container: Container) => {
   return container.status
 }
 
+const deriveTaskStatus = (container: Container) => {
+  const status = container.status.toLowerCase()
+  if (status === 'running') {
+    return { label: 'running', className: 'status-warn' }
+  }
+  if (status === 'exited' || status === 'dead') {
+    if (container.exit_code === 0) {
+      return { label: 'succeeded', className: 'status-running' }
+    }
+    if (typeof container.exit_code === 'number') {
+      return { label: 'failed', className: 'status-error' }
+    }
+    return { label: container.status, className: 'status-down' }
+  }
+  return { label: container.status, className: statusClass(container.status) }
+}
+
+const taskLastRun = (container: Container) => container.finished_at || container.started_at
+
 const hasDerivedFailure = (container: Container) => {
   if (container.restart_loop) return true
   return container.health_status.toLowerCase() === 'unhealthy'
@@ -195,7 +216,12 @@ const isContainerBroken = (container: Container) => {
   if (container.role !== 'task') {
     return container.status.toLowerCase() !== 'running'
   }
-  return container.status.toLowerCase() === 'dead'
+  const status = container.status.toLowerCase()
+  if (status === 'dead') return true
+  if (status === 'exited') {
+    return container.exit_code !== 0
+  }
+  return status !== 'running'
 }
 
 const shortId = (val: string, max = 12) => {
@@ -786,7 +812,9 @@ function ContainerRow({
   onLoadMore,
 }: RowProps) {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
-  const statusText = displayStatus(container)
+  const isTask = container.role === 'task'
+  const taskStatus = isTask ? deriveTaskStatus(container) : null
+  const statusText = taskStatus?.label ?? displayStatus(container)
   const derivedStatus = deriveDerivedStatus(container)
   const wentBad = container.restart_loop
     ? formatRelativeTime(container.restart_loop_since)
@@ -816,6 +844,11 @@ function ContainerRow({
   }, [container.name, expanded, onLoadMore, page.done, page.loading])
 
   const hasFailure = hasDerivedFailure(container)
+  const statusDotClass = isTask
+    ? (taskStatus?.className ?? 'status-warn')
+    : hasFailure
+      ? 'status-down'
+      : statusClass(statusText)
   return (
     <article className={`container-card ${expanded ? 'expanded' : ''} ${flash ? 'flash' : ''}`}>
       <button
@@ -825,7 +858,7 @@ function ContainerRow({
           onToggle(container.name)
         }}
       >
-        <div className={`status-dot ${hasFailure ? 'status-down' : statusClass(statusText)}`} />
+        <div className={`status-dot ${statusDotClass}`} />
         <div className="container-info">
           <div className="name-row">
             <span className="name container-name">{container.name}</span>
@@ -835,6 +868,16 @@ function ContainerRow({
             <span className="image-name">
               {container.image}:{container.image_tag}
             </span>
+            {isTask && (
+              <>
+                <span>ID: {shortId(container.container_id)}</span>
+                <span>User: {container.user || '—'}</span>
+                <span>
+                  Mem: {formatBytes(container.memory_reservation)} /{' '}
+                  {formatBytes(container.memory_limit)}
+                </span>
+              </>
+            )}
           </div>
         </div>
         <div className="container-side">
@@ -848,8 +891,19 @@ function ContainerRow({
             </div>
           )}
           <div className="time-lines">
-            <div className="started-time">Started: {formatRelativeTime(container.started_at)}</div>
-            {wentBad && <div className="started-time">Went bad: {wentBad}</div>}
+            {isTask ? (
+              <>
+                <div className="started-time">Last run: {formatRelativeTime(taskLastRun(container))}</div>
+                {typeof container.exit_code === 'number' && (
+                  <div className="started-time">Exit code: {container.exit_code}</div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="started-time">Started: {formatRelativeTime(container.started_at)}</div>
+                {wentBad && <div className="started-time">Went bad: {wentBad}</div>}
+              </>
+            )}
           </div>
         </div>
       </button>
@@ -861,6 +915,13 @@ function ContainerRow({
               <h3>Runtime</h3>
               <p>Registered: {formatRelativeTime(container.registered_at)}</p>
               <p>Created: {formatRelativeTime(container.created_at)}</p>
+              <p>
+                {isTask ? 'Last run' : 'Started'}:{' '}
+                {formatRelativeTime(isTask ? taskLastRun(container) : container.started_at)}
+              </p>
+              {isTask && typeof container.exit_code === 'number' && (
+                <p>Exit code: {container.exit_code}</p>
+              )}
               <p className={container.user === '0:0' ? 'warn-text' : undefined}>
                 User: {container.user}
                 {container.user === '0:0' && <span className="warn-badge">!</span>}
