@@ -711,6 +711,8 @@ func (m *Monitor) emitEvent(ctx context.Context, e store.Event) {
 			CreatedAt:           container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			RegisteredAt:        container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
 			StartedAt:           container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			FinishedAt:          formatMaybeTime(container.FinishedAt),
+			ExitCode:            container.ExitCode,
 			Status:              container.Status,
 			Role:                container.Role,
 			Caps:                container.Caps,
@@ -798,6 +800,8 @@ func (m *Monitor) emitAlertRecord(ctx context.Context, a store.Alert) {
 			CreatedAt:           container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			RegisteredAt:        container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
 			StartedAt:           container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			FinishedAt:          formatMaybeTime(container.FinishedAt),
+			ExitCode:            container.ExitCode,
 			Status:              container.Status,
 			Role:                container.Role,
 			Caps:                container.Caps,
@@ -873,8 +877,14 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		healthFailingStreak = inspect.State.Health.FailingStreak
 	}
 	var startedAt time.Time
+	var finishedAt time.Time
+	var exitCode *int
 	if inspect.State != nil {
 		startedAt = parseDockerTime(inspect.State.StartedAt)
+		finishedAt = parseDockerTime(inspect.State.FinishedAt)
+		if !finishedAt.IsZero() || strings.EqualFold(status, "exited") || strings.EqualFold(status, "dead") {
+			exitCode = &inspect.State.ExitCode
+		}
 	}
 	var healthcheck *store.Healthcheck
 	if inspect.Config != nil && inspect.Config.Healthcheck != nil {
@@ -902,6 +912,8 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		ImageID:             inspect.Image,
 		CreatedAt:           created,
 		StartedAt:           startedAt,
+		FinishedAt:          finishedAt,
+		ExitCode:            exitCode,
 		Status:              status,
 		Role:                role,
 		Caps:                caps,
@@ -916,6 +928,13 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		UpdatedAt:           time.Now().UTC(),
 		Present:             true,
 	}
+}
+
+func formatMaybeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02T15:04:05Z")
 }
 
 func parseDockerTime(val string) time.Time {
