@@ -513,6 +513,21 @@ body {
   background: transparent;
 }
 
+.feed-row-placeholder {
+  opacity: 0.7;
+}
+
+.placeholder-line {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--border-subtle);
+  width: 72%;
+}
+
+.placeholder-line-short {
+  width: 44%;
+}
+
 .event-body {
   flex: 1;
   display: flex;
