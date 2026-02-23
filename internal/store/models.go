@@ -16,6 +16,7 @@ type Container struct {
 	Role                string
 	Caps                []string
 	ReadOnly            bool
+	NoNewPrivileges     bool
 	User                string
 	LastEventID         int64
 	UpdatedAt           time.Time

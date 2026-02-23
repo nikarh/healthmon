@@ -18,6 +18,7 @@ interface Container {
   role: string
   caps: string[]
   read_only: boolean
+  no_new_privileges: boolean
   user: string
   present: boolean
   health_status: string
@@ -852,6 +853,12 @@ function ContainerRow({
               {!container.read_only && (
                 <p className="warn-text">
                   Read-only: no
+                  <span className="warn-badge">!</span>
+                </p>
+              )}
+              {!container.no_new_privileges && (
+                <p className="warn-text">
+                  No-new-privileges: no
                   <span className="warn-badge">!</span>
                 </p>
               )}

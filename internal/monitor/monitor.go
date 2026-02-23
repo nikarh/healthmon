@@ -715,6 +715,7 @@ func (m *Monitor) emitEvent(ctx context.Context, e store.Event) {
 			Role:                container.Role,
 			Caps:                container.Caps,
 			ReadOnly:            container.ReadOnly,
+			NoNewPrivileges:     container.NoNewPrivileges,
 			User:                container.User,
 			Present:             container.Present,
 			HealthStatus:        container.HealthStatus,
@@ -799,6 +800,7 @@ func (m *Monitor) emitAlertRecord(ctx context.Context, a store.Alert) {
 			Role:                container.Role,
 			Caps:                container.Caps,
 			ReadOnly:            container.ReadOnly,
+			NoNewPrivileges:     container.NoNewPrivileges,
 			User:                container.User,
 			Present:             container.Present,
 			HealthStatus:        container.HealthStatus,
@@ -900,6 +902,7 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		Role:                role,
 		Caps:                caps,
 		ReadOnly:            inspect.HostConfig.ReadonlyRootfs,
+		NoNewPrivileges:     hasNoNewPrivileges(inspect.HostConfig),
 		User:                user,
 		HealthStatus:        healthStatus,
 		HealthFailingStreak: healthFailingStreak,
@@ -1079,6 +1082,22 @@ func defaultCaps() []string {
 		"CAP_SETUID",
 		"CAP_SYS_CHROOT",
 	}
+}
+
+func hasNoNewPrivileges(hostConfig *container.HostConfig) bool {
+	if hostConfig == nil {
+		return false
+	}
+	for _, opt := range hostConfig.SecurityOpt {
+		parts := strings.SplitN(strings.TrimSpace(strings.ToLower(opt)), ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if parts[0] == "no-new-privileges" && parts[1] == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveRole(labels map[string]string) string {

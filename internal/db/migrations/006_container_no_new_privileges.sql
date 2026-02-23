@@ -1,0 +1,1 @@
+ALTER TABLE containers ADD COLUMN no_new_privileges INTEGER NOT NULL DEFAULT 0;
