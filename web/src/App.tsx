@@ -849,10 +849,12 @@ function ContainerRow({
                 User: {container.user}
                 {container.user === '0:0' && <span className="warn-badge">!</span>}
               </p>
-              <p className={!container.read_only ? 'warn-text' : undefined}>
-                Read-only: {container.read_only ? 'yes' : 'no'}
-                {!container.read_only && <span className="warn-badge">!</span>}
-              </p>
+              {!container.read_only && (
+                <p className="warn-text">
+                  Read-only: no
+                  <span className="warn-badge">!</span>
+                </p>
+              )}
             </div>
             <div>
               <h3>Capabilities</h3>
