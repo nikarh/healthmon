@@ -873,13 +873,19 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 	var healthcheck *store.Healthcheck
 	if inspect.Config != nil && inspect.Config.Healthcheck != nil {
 		health := inspect.Config.Healthcheck
-		healthcheck = &store.Healthcheck{
-			Test:          health.Test,
-			Interval:      durationString(health.Interval),
-			Timeout:       durationString(health.Timeout),
-			StartPeriod:   durationString(health.StartPeriod),
-			StartInterval: durationString(health.StartInterval),
-			Retries:       health.Retries,
+		disabled := len(health.Test) > 0 && strings.EqualFold(strings.TrimSpace(health.Test[0]), "NONE")
+		if !disabled {
+			healthcheck = &store.Healthcheck{
+				Test:          health.Test,
+				Interval:      durationString(health.Interval),
+				Timeout:       durationString(health.Timeout),
+				StartPeriod:   durationString(health.StartPeriod),
+				StartInterval: durationString(health.StartInterval),
+				Retries:       health.Retries,
+			}
+		} else {
+			healthStatus = ""
+			healthFailingStreak = 0
 		}
 	}
 
