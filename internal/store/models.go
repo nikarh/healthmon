@@ -17,6 +17,8 @@ type Container struct {
 	Caps                []string
 	ReadOnly            bool
 	NoNewPrivileges     bool
+	MemoryReservation   int64
+	MemoryLimit         int64
 	User                string
 	LastEventID         int64
 	UpdatedAt           time.Time
