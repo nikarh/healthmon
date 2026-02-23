@@ -881,7 +881,16 @@ function ContainerRow({
             </div>
           )}
           <div className="time-lines">
-            {!isTask && (
+            {isTask ? (
+              <>
+                <div className="started-time">
+                  Last run: {formatRelativeTime(taskLastRun(container))}
+                </div>
+                {typeof container.exit_code === 'number' && (
+                  <div className="started-time">Exit code: {container.exit_code}</div>
+                )}
+              </>
+            ) : (
               <>
                 <div className="started-time">
                   Started: {formatRelativeTime(container.started_at)}
