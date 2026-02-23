@@ -19,6 +19,8 @@ interface Container {
   caps: string[]
   read_only: boolean
   no_new_privileges: boolean
+  memory_reservation: number
+  memory_limit: number
   user: string
   present: boolean
   health_status: string
@@ -159,6 +161,19 @@ const formatRelativeTime = (val: string) => {
   if (abs >= hour) return rtf.format(Math.round(diff / hour), 'hour')
   if (abs >= minute) return rtf.format(Math.round(diff / minute), 'minute')
   return rtf.format(Math.round(diff / 1000), 'second')
+}
+
+const formatBytes = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return 'not set'
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  let num = value
+  let unit = 0
+  while (num >= 1024 && unit < units.length - 1) {
+    num /= 1024
+    unit += 1
+  }
+  const precision = num >= 10 || unit === 0 ? 0 : 1
+  return `${num.toFixed(precision)} ${units[unit]}`
 }
 
 const displayStatus = (container: Container) => {
@@ -849,6 +864,19 @@ function ContainerRow({
               <p className={container.user === '0:0' ? 'warn-text' : undefined}>
                 User: {container.user}
                 {container.user === '0:0' && <span className="warn-badge">!</span>}
+              </p>
+              <p
+                className={
+                  container.memory_reservation > 0 && container.memory_limit > 0
+                    ? undefined
+                    : 'warn-text'
+                }
+              >
+                Memory (reservation / limit): {formatBytes(container.memory_reservation)} /{' '}
+                {formatBytes(container.memory_limit)}
+                {(container.memory_reservation <= 0 || container.memory_limit <= 0) && (
+                  <span className="warn-badge">!</span>
+                )}
               </p>
               {!container.read_only && (
                 <p className="warn-text">
