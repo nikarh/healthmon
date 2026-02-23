@@ -933,8 +933,9 @@ interface AllEventsProps {
 
 function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllEventsProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
+  const rowCount = Math.max(total, events.length)
   const rowHeight = useDynamicRowHeight({
-    defaultRowHeight: 136,
+    defaultRowHeight: 88,
     key: events[0]?.id ?? 'empty',
   })
   const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
@@ -982,17 +983,9 @@ function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllE
   }, [])
 
   const listHeight = useMemo(() => {
-    if (events.length === 0 || listSize.maxHeight === 0) return 0
-    const average = rowHeight.getAverageRowHeight() || 136
-    let total = 0
-    for (let index = 0; index < events.length; index += 1) {
-      total += rowHeight.getRowHeight(index) ?? average
-      if (total >= listSize.maxHeight) {
-        return listSize.maxHeight
-      }
-    }
-    return Math.min(total, listSize.maxHeight)
-  }, [events.length, listSize.maxHeight, rowHeight])
+    if (rowCount === 0 || listSize.maxHeight === 0) return 0
+    return listSize.maxHeight
+  }, [rowCount, listSize.maxHeight])
 
   const rowComponent = useCallback(
     ({
@@ -1013,11 +1006,12 @@ function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllE
         style={style}
         ariaAttributes={ariaAttributes}
         events={events}
+        rowCount={rowCount}
         onMeasured={handleRowMeasured}
         rowHeight={rowHeight}
       />
     ),
-    [events, handleRowMeasured, rowHeight],
+    [events, handleRowMeasured, rowCount, rowHeight],
   )
 
   return (
@@ -1027,10 +1021,10 @@ function AllEventsFeed({ events, total, page, onLoadMore, error, onRetry }: AllE
         <span>{total} total</span>
       </div>
       <div ref={listRef} className="event-list feed-list">
-        {events.length > 0 && listHeight > 0 && listSize.width > 0 && (
+        {rowCount > 0 && listHeight > 0 && listSize.width > 0 && (
           <List
             style={{ height: listHeight, width: listSize.width }}
-            rowCount={events.length}
+            rowCount={rowCount}
             rowHeight={rowHeight}
             rowComponent={rowComponent}
             rowProps={{}}
@@ -1068,8 +1062,9 @@ interface AllAlertsProps {
 
 function AllAlertsFeed({ alerts, total, page, onLoadMore, error, onRetry }: AllAlertsProps) {
   const listRef = useRef<HTMLDivElement | null>(null)
+  const rowCount = Math.max(total, alerts.length)
   const rowHeight = useDynamicRowHeight({
-    defaultRowHeight: 136,
+    defaultRowHeight: 88,
     key: alerts[0]?.id ?? 'empty',
   })
   const [listSize, setListSize] = useState({ width: 0, maxHeight: 0 })
@@ -1117,17 +1112,9 @@ function AllAlertsFeed({ alerts, total, page, onLoadMore, error, onRetry }: AllA
   }, [])
 
   const listHeight = useMemo(() => {
-    if (alerts.length === 0 || listSize.maxHeight === 0) return 0
-    const average = rowHeight.getAverageRowHeight() || 136
-    let total = 0
-    for (let index = 0; index < alerts.length; index += 1) {
-      total += rowHeight.getRowHeight(index) ?? average
-      if (total >= listSize.maxHeight) {
-        return listSize.maxHeight
-      }
-    }
-    return Math.min(total, listSize.maxHeight)
-  }, [alerts.length, listSize.maxHeight, rowHeight])
+    if (rowCount === 0 || listSize.maxHeight === 0) return 0
+    return listSize.maxHeight
+  }, [rowCount, listSize.maxHeight])
 
   const rowComponent = useCallback(
     ({
@@ -1148,11 +1135,12 @@ function AllAlertsFeed({ alerts, total, page, onLoadMore, error, onRetry }: AllA
         style={style}
         ariaAttributes={ariaAttributes}
         alerts={alerts}
+        rowCount={rowCount}
         onMeasured={handleRowMeasured}
         rowHeight={rowHeight}
       />
     ),
-    [alerts, handleRowMeasured, rowHeight],
+    [alerts, handleRowMeasured, rowCount, rowHeight],
   )
 
   return (
@@ -1162,10 +1150,10 @@ function AllAlertsFeed({ alerts, total, page, onLoadMore, error, onRetry }: AllA
         <span>{total} total</span>
       </div>
       <div ref={listRef} className="event-list feed-list">
-        {alerts.length > 0 && listHeight > 0 && listSize.width > 0 && (
+        {rowCount > 0 && listHeight > 0 && listSize.width > 0 && (
           <List
             style={{ height: listHeight, width: listSize.width }}
-            rowCount={alerts.length}
+            rowCount={rowCount}
             rowHeight={rowHeight}
             rowComponent={rowComponent}
             rowProps={{}}
@@ -1201,11 +1189,20 @@ interface EventRowProps {
     role: 'listitem'
   }
   events: EventItem[]
+  rowCount: number
   onMeasured: () => void
   rowHeight: ReturnType<typeof useDynamicRowHeight>
 }
 
-function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight }: EventRowProps) {
+function EventRow({
+  index,
+  style,
+  ariaAttributes,
+  events,
+  rowCount,
+  onMeasured,
+  rowHeight,
+}: EventRowProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const notifiedRef = useRef(false)
 
@@ -1219,8 +1216,28 @@ function EventRow({ index, style, ariaAttributes, events, onMeasured, rowHeight 
     return cleanup
   }, [rowHeight, onMeasured])
 
+  const isLast = index === rowCount - 1
+  if (index >= events.length) {
+    return (
+      <div
+        ref={ref}
+        role={ariaAttributes.role}
+        aria-posinset={ariaAttributes['aria-posinset']}
+        aria-setsize={ariaAttributes['aria-setsize']}
+        style={style}
+        className={`event-row feed-row feed-row-placeholder ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'} ${
+          isLast ? 'feed-row-last' : ''
+        }`}
+      >
+        <div className="event-dot sev-blue" />
+        <div className="event-body">
+          <div className="placeholder-line" />
+          <div className="placeholder-line placeholder-line-short" />
+        </div>
+      </div>
+    )
+  }
   const event = events[index]
-  const isLast = index === events.length - 1
   const title = deriveEventTitle(event)
   const changeLine = deriveChangeLine(event)
   return (
@@ -1264,11 +1281,20 @@ interface AlertRowProps {
     role: 'listitem'
   }
   alerts: AlertItem[]
+  rowCount: number
   onMeasured: () => void
   rowHeight: ReturnType<typeof useDynamicRowHeight>
 }
 
-function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight }: AlertRowProps) {
+function AlertRow({
+  index,
+  style,
+  ariaAttributes,
+  alerts,
+  rowCount,
+  onMeasured,
+  rowHeight,
+}: AlertRowProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const notifiedRef = useRef(false)
 
@@ -1282,8 +1308,28 @@ function AlertRow({ index, style, ariaAttributes, alerts, onMeasured, rowHeight 
     return cleanup
   }, [rowHeight, onMeasured])
 
+  const isLast = index === rowCount - 1
+  if (index >= alerts.length) {
+    return (
+      <div
+        ref={ref}
+        role={ariaAttributes.role}
+        aria-posinset={ariaAttributes['aria-posinset']}
+        aria-setsize={ariaAttributes['aria-setsize']}
+        style={style}
+        className={`event-row feed-row feed-row-placeholder ${index % 2 === 0 ? 'feed-row-even' : 'feed-row-odd'} ${
+          isLast ? 'feed-row-last' : ''
+        }`}
+      >
+        <div className="event-dot sev-blue" />
+        <div className="event-body">
+          <div className="placeholder-line" />
+          <div className="placeholder-line placeholder-line-short" />
+        </div>
+      </div>
+    )
+  }
   const alert = alerts[index]
-  const isLast = index === alerts.length - 1
   const title = deriveAlertTitle(alert)
   const changeLine = deriveAlertChangeLine(alert)
   let message = alert.type.toLowerCase() === 'failure_no_restart' ? 'Task failed' : alert.message
