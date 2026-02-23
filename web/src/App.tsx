@@ -872,7 +872,7 @@ function ContainerRow({
                     : 'warn-text'
                 }
               >
-                Memory (reservation / limit): {formatBytes(container.memory_reservation)} /{' '}
+                Mem limits: {formatBytes(container.memory_reservation)} /{' '}
                 {formatBytes(container.memory_limit)}
                 {(container.memory_reservation <= 0 || container.memory_limit <= 0) && (
                   <span className="warn-badge">!</span>
