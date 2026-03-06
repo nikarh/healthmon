@@ -31,6 +31,8 @@ type Monitor struct {
 	capDefault []string
 }
 
+const composeServiceLabel = "com.docker.compose.service"
+
 func New(cfg config.Config, store *store.Store, server *api.Server) *Monitor {
 	return &Monitor{
 		cfg:        cfg,
@@ -79,17 +81,16 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 
 	presentNames := make(map[string]struct{}, len(result.Items))
 	for _, c := range result.Items {
-		if len(c.Names) == 0 {
-			continue
-		}
-		name := strings.TrimPrefix(c.Names[0], "/")
-		presentNames[name] = struct{}{}
 		inspect, err := m.docker.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			continue
 		}
 		info := m.inspectToContainer(inspect.Container)
-		info.Name = name
+		if info.Name == "" {
+			continue
+		}
+		name := info.Name
+		presentNames[name] = struct{}{}
 		autoRestart := hasAutoRestartPolicy(inspect.Container)
 		now := time.Now().UTC()
 		if existing, ok := m.store.GetContainer(name); ok {
@@ -129,13 +130,13 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 					info.RestartLoop = false
 					info.RestartStreak = 0
 					info.RestartLoopSince = time.Time{}
-					m.restarts.markHealed(restartTrackerKey(info.ContainerID, name))
+					m.restarts.markHealed(restartTrackerKey(info.ContainerID, info.Name))
 				}
 			} else {
 				info.RestartLoop = false
 				info.RestartStreak = 0
 				info.RestartLoopSince = time.Time{}
-				m.restarts.reset(restartTrackerKey(info.ContainerID, name))
+				m.restarts.reset(restartTrackerKey(info.ContainerID, info.Name))
 			}
 		}
 		if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
@@ -155,17 +156,7 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 }
 
 func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
-	name := msg.Actor.Attributes["name"]
-	if name == "" && msg.Actor.ID != "" {
-		if container, foundName, ok := m.store.FindContainerByID(msg.Actor.ID); ok {
-			_ = container
-			name = foundName
-		}
-	}
-	if name == "" {
-		return
-	}
-	name = strings.TrimPrefix(name, "/")
+	name := strings.TrimPrefix(msg.Actor.Attributes["name"], "/")
 	if isHealthcheckExecEvent(msg) {
 		return
 	}
@@ -199,19 +190,29 @@ func (m *Monitor) handleEvent(ctx context.Context, msg events.Message) {
 	case msg.Action == "rename":
 		m.handleRename(ctx, msg, name)
 	case msg.Action == "destroy" || msg.Action == "remove" || msg.Action == "rm":
-		_ = m.store.SetContainerPresent(ctx, name, false)
-		m.server.Broadcast(ctx, api.EventUpdate{Container: api.ContainerResponse{Name: name, Present: false}})
+		serviceName := ""
+		if container, ok, _ := m.store.GetContainerByContainerID(ctx, msg.Actor.ID); ok {
+			serviceName = container.Name
+		}
+		if serviceName == "" {
+			return
+		}
+		_ = m.store.SetContainerPresent(ctx, serviceName, false)
+		m.server.Broadcast(ctx, api.EventUpdate{Container: api.ContainerResponse{Name: serviceName, Present: false}})
 	}
 }
 
-func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
+func (m *Monitor) handleCreate(ctx context.Context, parsedName, id string) {
 	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return
 	}
 
 	newInfo := m.inspectToContainer(inspect.Container)
-	newInfo.Name = name
+	if newInfo.Name == "" {
+		return
+	}
+	name := newInfo.Name
 
 	now := time.Now().UTC()
 	existing, has := m.store.GetContainer(name)
@@ -245,25 +246,28 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 		}
 		imageChanged := existing.ImageID != newInfo.ImageID || existing.ImageTag != newInfo.ImageTag
 		if imageChanged {
-			m.emitInfo(ctx, name, id, "image_changed", fmt.Sprintf("Image changed %s -> %s", existing.Image, newInfo.Image), existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
-			m.emitAlert(ctx, name, id, "image_changed", "Container image updated", "blue", nil)
+			m.emitInfo(ctx, name, id, parsedName, "image_changed", fmt.Sprintf("Image changed %s -> %s", existing.Image, newInfo.Image), existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
+			m.emitAlert(ctx, name, id, parsedName, "image_changed", "Container image updated", "blue", nil)
 		} else {
-			m.emitInfo(ctx, name, id, "recreated", "Container recreated", existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
+			m.emitInfo(ctx, name, id, parsedName, "recreated", "Container recreated", existing.Image, newInfo.Image, existing.ImageID, newInfo.ImageID, "recreate", nil)
 		}
-		m.emitAlert(ctx, name, id, "recreated", "Container recreated", "blue", nil)
+		m.emitAlert(ctx, name, id, parsedName, "recreated", "Container recreated", "blue", nil)
 	}
 
 	_ = m.store.UpsertContainer(ctx, newInfo)
-	m.emitInfo(ctx, name, id, "created", "Container created", "", "", "", "", "create", nil)
+	m.emitInfo(ctx, name, id, parsedName, "created", "Container created", "", "", "", "", "create", nil)
 }
 
-func (m *Monitor) handleStart(ctx context.Context, name, id string) {
+func (m *Monitor) handleStart(ctx context.Context, parsedName, id string) {
 	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return
 	}
 	info := m.inspectToContainer(inspect.Container)
-	info.Name = name
+	if info.Name == "" {
+		return
+	}
+	name := info.Name
 	autoRestart := hasAutoRestartPolicy(inspect.Container)
 	if !autoRestart {
 		info.RestartLoop = false
@@ -296,7 +300,7 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 		info.StartedAt = time.Now().UTC()
 	}
 	_ = m.store.UpsertContainer(ctx, info)
-	m.emitInfo(ctx, name, id, "started", "Container started", "", "", "", "", "start", nil)
+	m.emitInfo(ctx, name, id, parsedName, "started", "Container started", "", "", "", "", "start", nil)
 }
 
 func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName string) {
@@ -316,21 +320,23 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 		return
 	}
 	info := m.inspectToContainer(inspect.Container)
-	info.Name = newName
-	if existing, ok := m.store.GetContainer(oldName); ok {
+	if info.Name == "" {
+		return
+	}
+	if existing, ok := m.store.GetContainer(info.Name); ok {
 		info.RegisteredAt = existing.RegisteredAt
 		info.StartedAt = existing.StartedAt
 		info.LastEventID = existing.LastEventID
+		info.RestartLoop = existing.RestartLoop
+		info.RestartStreak = existing.RestartStreak
+		info.RestartLoopSince = existing.RestartLoopSince
+		info.UnhealthySince = existing.UnhealthySince
 	}
-	// If this rename replaces an older logical container name that was still broken,
-	// preserve the derived bad state until heal timeout marks it recovered.
-	if hasTarget {
-		if target.RestartLoop {
-			info.RestartLoop = true
-			info.RestartLoopSince = target.RestartLoopSince
-			if info.RestartStreak < target.RestartStreak {
-				info.RestartStreak = target.RestartStreak
-			}
+	if hasTarget && target.Name == info.Name {
+		info.RestartLoop = target.RestartLoop
+		info.RestartLoopSince = target.RestartLoopSince
+		if info.RestartStreak < target.RestartStreak {
+			info.RestartStreak = target.RestartStreak
 		}
 		if strings.ToLower(target.HealthStatus) == "unhealthy" {
 			info.HealthStatus = target.HealthStatus
@@ -341,12 +347,17 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 	if info.RegisteredAt.IsZero() {
 		info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
 	}
-	_ = m.store.RenameContainer(ctx, oldName, newName, info)
-	m.emitInfo(ctx, newName, msg.Actor.ID, "renamed", fmt.Sprintf("Container renamed %s -> %s", oldName, newName), "", "", "", "", "rename", nil)
+	info.CurrentContainerName = newName
+	_ = m.store.UpsertContainer(ctx, info)
+	m.emitInfo(ctx, info.Name, msg.Actor.ID, newName, "renamed", fmt.Sprintf("Container renamed %s -> %s", oldName, newName), "", "", "", "", "rename", nil)
 }
 
-func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
+func (m *Monitor) handleHealth(ctx context.Context, parsedName, id, status string) {
 	status = strings.TrimSpace(strings.ToLower(status))
+	name := ""
+	if container, ok, _ := m.store.GetContainerByContainerID(ctx, id); ok {
+		name = container.Name
+	}
 	existing, has := m.store.GetContainer(name)
 	prevStatus := ""
 	prevStreak := 0
@@ -357,7 +368,10 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 
 	if inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{}); err == nil {
 		info := m.inspectToContainer(inspect.Container)
-		info.Name = name
+		if info.Name == "" {
+			return
+		}
+		name = info.Name
 		if has {
 			info.RegisteredAt = existing.RegisteredAt
 			info.StartedAt = existing.StartedAt
@@ -397,7 +411,7 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 	switch status {
 	case "unhealthy":
 		if prevStatus != "unhealthy" {
-			m.emitAlert(ctx, name, id, "unhealthy", "Container became unhealthy", "red", nil)
+			m.emitAlert(ctx, name, id, parsedName, "unhealthy", "Container became unhealthy", "red", nil)
 		}
 	case "healthy":
 		if prevStatus == "unhealthy" || prevStreak > 0 {
@@ -405,23 +419,41 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 			if prevStreak > 0 {
 				message = fmt.Sprintf("Container became healthy after %d failed checks", prevStreak)
 			}
-			m.emitAlert(ctx, name, id, "healthy", message, "green", nil)
+			m.emitAlert(ctx, name, id, parsedName, "healthy", message, "green", nil)
 		}
 	}
 }
 
-func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string, exitCode *int, signal string) {
+func (m *Monitor) handleRestartLike(ctx context.Context, parsedName, id, reason string, exitCode *int, signal string) {
 	now := time.Now().UTC()
-	restartKey := restartTrackerKey(id, name)
+	name := ""
+	restartKey := restartTrackerKey(id, "")
 
 	inspect, inspectErr := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
-	hasAutoRestart := inspectErr == nil && hasAutoRestartPolicy(inspect.Container)
+	var info store.Container
+	hasAutoRestart := false
+	if inspectErr == nil {
+		info = m.inspectToContainer(inspect.Container)
+		if info.Name == "" {
+			return
+		}
+		name = info.Name
+		restartKey = restartTrackerKey(id, name)
+		hasAutoRestart = hasAutoRestartPolicy(inspect.Container)
+	}
 	wasInLoop := false
+	if name == "" {
+		if existingByID, ok, _ := m.store.GetContainerByContainerID(ctx, id); ok {
+			name = existingByID.Name
+			restartKey = restartTrackerKey(id, name)
+		}
+	}
 	if existing, ok := m.store.GetContainer(name); ok {
 		wasInLoop = existing.RestartLoop
-		if existing.ContainerID != "" {
-			restartKey = restartTrackerKey(existing.ContainerID, existing.Name)
-		}
+		restartKey = restartTrackerKey(existing.ContainerID, existing.Name)
+	}
+	if name == "" {
+		return
 	}
 	if !hasAutoRestart {
 		m.restarts.reset(restartKey)
@@ -437,7 +469,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	if signal != "" {
 		message = fmt.Sprintf("Restart event: %s (signal %s)", reason, signal)
 	}
-	m.emitInfo(ctx, name, id, "restart", message, "", "", "", "", reason, exitCode)
+	m.emitInfo(ctx, name, id, parsedName, "restart", message, "", "", "", "", reason, exitCode)
 
 	if c, ok := m.store.GetContainer(name); ok {
 		c.RestartLoop = inLoop
@@ -462,24 +494,23 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	}
 
 	if reason == "oom" {
-		m.emitAlert(ctx, name, id, "oom_killed", "Container killed by OOM", "red", exitCode)
+		m.emitAlert(ctx, name, id, parsedName, "oom_killed", "Container killed by OOM", "red", exitCode)
 	}
 	if enteredLoop && !wasInLoop {
 		details, _ := json.Marshal(map[string]int{"restart_count": streak})
 		m.emitAlertRecord(ctx, store.Alert{
-			Container:   name,
-			ContainerID: id,
-			Type:        "restart_loop",
-			Severity:    "red",
-			Message:     "Restart loop detected",
-			Timestamp:   now,
-			DetailsJSON: string(details),
+			Container:           name,
+			ContainerID:         id,
+			ParsedContainerName: parsedName,
+			Type:                "restart_loop",
+			Severity:            "red",
+			Message:             "Restart loop detected",
+			Timestamp:           now,
+			DetailsJSON:         string(details),
 		})
 	}
 
 	if inspectErr == nil {
-		info := m.inspectToContainer(inspect.Container)
-		info.Name = name
 		computedLoopStreak := streak
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
@@ -511,7 +542,7 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 		}
 		_ = m.store.UpsertContainer(ctx, info)
 		if shouldAlertNoRestartPolicyFailure(reason, exitCode, inspect.Container) {
-			m.emitAlert(ctx, name, id, "failure_no_restart", "Container failed without restart policy", "red", exitCode)
+			m.emitAlert(ctx, name, id, parsedName, "failure_no_restart", "Container failed without restart policy", "red", exitCode)
 		}
 		return
 	}
@@ -526,14 +557,21 @@ func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string
 	}
 }
 
-func (m *Monitor) handleStop(ctx context.Context, name, id string, exitCode *int) {
+func (m *Monitor) handleStop(ctx context.Context, parsedName, id string, exitCode *int) {
 	now := time.Now().UTC()
-	m.emitInfo(ctx, name, id, "stopped", "Container stopped", "", "", "", "", "stop", exitCode)
+	name := ""
+	if container, ok, _ := m.store.GetContainerByContainerID(ctx, id); ok {
+		name = container.Name
+	}
+	m.emitInfo(ctx, name, id, parsedName, "stopped", "Container stopped", "", "", "", "", "stop", exitCode)
 
 	inspect, err := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err == nil {
 		info := m.inspectToContainer(inspect.Container)
-		info.Name = name
+		if info.Name == "" {
+			return
+		}
+		name = info.Name
 		if existing, ok := m.store.GetContainer(name); ok {
 			info.RegisteredAt = existing.RegisteredAt
 			info.StartedAt = existing.StartedAt
@@ -553,7 +591,7 @@ func (m *Monitor) handleStop(ctx context.Context, name, id string, exitCode *int
 		}
 		_ = m.store.UpsertContainer(ctx, info)
 		if shouldAlertNoRestartPolicyFailure("stop", exitCode, inspect.Container) {
-			m.emitAlert(ctx, name, id, "failure_no_restart", "Container failed without restart policy", "red", exitCode)
+			m.emitAlert(ctx, name, id, parsedName, "failure_no_restart", "Container failed without restart policy", "red", exitCode)
 		}
 		return
 	}
@@ -568,14 +606,21 @@ func (m *Monitor) handleStop(ctx context.Context, name, id string, exitCode *int
 	}
 }
 
-func (m *Monitor) handleSignal(ctx context.Context, name, id, signal string) {
+func (m *Monitor) handleSignal(ctx context.Context, parsedName, id, signal string) {
+	name := ""
+	if container, ok, _ := m.store.GetContainerByContainerID(ctx, id); ok {
+		name = container.Name
+	}
+	if name == "" {
+		name = parsedName
+	}
 	message := "Signal sent"
 	reason := "signal"
 	if signal != "" {
 		message = fmt.Sprintf("Signal sent: %s", signal)
 		reason = fmt.Sprintf("signal_%s", strings.ToLower(signal))
 	}
-	m.emitInfo(ctx, name, id, "signal", message, "", "", "", "", reason, nil)
+	m.emitInfo(ctx, name, id, parsedName, "signal", message, "", "", "", "", reason, nil)
 }
 
 func (m *Monitor) watchHeals(ctx context.Context) {
@@ -624,43 +669,46 @@ func (m *Monitor) checkHeals(ctx context.Context) {
 		}
 		details, _ := json.Marshal(map[string]int{"restart_count": streak})
 		m.emitAlertRecord(ctx, store.Alert{
-			Container:   c.Name,
-			ContainerID: c.ContainerID,
-			Type:        "restart_healed",
-			Severity:    "green",
-			Message:     message,
-			Timestamp:   now,
-			DetailsJSON: string(details),
+			Container:           c.Name,
+			ContainerID:         c.ContainerID,
+			ParsedContainerName: "",
+			Type:                "restart_healed",
+			Severity:            "green",
+			Message:             message,
+			Timestamp:           now,
+			DetailsJSON:         string(details),
 		})
 	}
 }
 
-func (m *Monitor) emitInfo(ctx context.Context, name, id, eventType, message, oldImage, newImage, oldImageID, newImageID, reason string, exitCode *int) {
+func (m *Monitor) emitInfo(ctx context.Context, name, id, parsedName, eventType, message, oldImage, newImage, oldImageID, newImageID, reason string, exitCode *int) {
 	m.emitEvent(ctx, store.Event{
-		Container:   name,
-		ContainerID: id,
-		Type:        eventType,
-		Severity:    "blue",
-		Message:     message,
-		Timestamp:   time.Now().UTC(),
-		OldImage:    oldImage,
-		NewImage:    newImage,
-		OldImageID:  oldImageID,
-		NewImageID:  newImageID,
-		Reason:      reason,
-		ExitCode:    exitCode,
+		Container:           name,
+		ContainerID:         id,
+		ParsedContainerName: parsedName,
+		Type:                eventType,
+		Severity:            "blue",
+		Message:             message,
+		Timestamp:           time.Now().UTC(),
+		OldImage:            oldImage,
+		NewImage:            newImage,
+		OldImageID:          oldImageID,
+		NewImageID:          newImageID,
+		Reason:              reason,
+		ExitCode:            exitCode,
 	})
 }
 
-func (m *Monitor) emitAlert(ctx context.Context, name, id, alertType, message, severity string, exitCode *int) {
+func (m *Monitor) emitAlert(ctx context.Context, name, id, parsedName, alertType, message, severity string, exitCode *int) {
 	alert := store.Alert{
-		Container:   name,
-		ContainerID: id,
-		Type:        alertType,
-		Severity:    severity,
-		Message:     message,
-		Timestamp:   time.Now().UTC(),
-		ExitCode:    exitCode,
+		Container:           name,
+		ContainerID:         id,
+		ParsedContainerName: parsedName,
+		Type:                alertType,
+		Severity:            severity,
+		Message:             message,
+		Timestamp:           time.Now().UTC(),
+		ExitCode:            exitCode,
 	}
 	m.emitAlertRecord(ctx, alert)
 }
@@ -704,49 +752,51 @@ func (m *Monitor) emitEvent(ctx context.Context, e store.Event) {
 
 	update := api.EventUpdate{
 		Container: api.ContainerResponse{
-			ID:                  container.ID,
-			Name:                container.Name,
-			ContainerID:         container.ContainerID,
-			Image:               container.Image,
-			ImageTag:            container.ImageTag,
-			ImageID:             container.ImageID,
-			CreatedAt:           container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-			RegisteredAt:        container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
-			StartedAt:           container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
-			FinishedAt:          formatMaybeTime(container.FinishedAt),
-			ExitCode:            container.ExitCode,
-			Status:              container.Status,
-			Role:                container.Role,
-			Caps:                container.Caps,
-			ReadOnly:            container.ReadOnly,
-			NoNewPrivileges:     container.NoNewPrivileges,
-			MemoryReservation:   container.MemoryReservation,
-			MemoryLimit:         container.MemoryLimit,
-			User:                container.User,
-			Present:             container.Present,
-			HealthStatus:        container.HealthStatus,
-			HealthFailingStreak: container.HealthFailingStreak,
-			UnhealthySince:      container.UnhealthySince.UTC().Format("2006-01-02T15:04:05Z"),
-			RestartLoop:         container.RestartLoop,
-			RestartStreak:       container.RestartStreak,
-			RestartLoopSince:    container.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
-			Healthcheck:         container.Healthcheck,
+			ID:                   container.ID,
+			Name:                 container.Name,
+			ContainerID:          container.ContainerID,
+			CurrentContainerName: container.CurrentContainerName,
+			Image:                container.Image,
+			ImageTag:             container.ImageTag,
+			ImageID:              container.ImageID,
+			CreatedAt:            container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			RegisteredAt:         container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
+			StartedAt:            container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			FinishedAt:           formatMaybeTime(container.FinishedAt),
+			ExitCode:             container.ExitCode,
+			Status:               container.Status,
+			Role:                 container.Role,
+			Caps:                 container.Caps,
+			ReadOnly:             container.ReadOnly,
+			NoNewPrivileges:      container.NoNewPrivileges,
+			MemoryReservation:    container.MemoryReservation,
+			MemoryLimit:          container.MemoryLimit,
+			User:                 container.User,
+			Present:              container.Present,
+			HealthStatus:         container.HealthStatus,
+			HealthFailingStreak:  container.HealthFailingStreak,
+			UnhealthySince:       container.UnhealthySince.UTC().Format("2006-01-02T15:04:05Z"),
+			RestartLoop:          container.RestartLoop,
+			RestartStreak:        container.RestartStreak,
+			RestartLoopSince:     container.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
+			Healthcheck:          container.Healthcheck,
 		},
 		Event: &api.EventResponse{
-			ID:          e.ID,
-			ContainerPK: container.ID,
-			Container:   e.Container,
-			ContainerID: e.ContainerID,
-			Type:        e.Type,
-			Message:     e.Message,
-			Timestamp:   e.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
-			OldImage:    e.OldImage,
-			NewImage:    e.NewImage,
-			OldImageID:  e.OldImageID,
-			NewImageID:  e.NewImageID,
-			Reason:      e.Reason,
-			DetailsJSON: e.DetailsJSON,
-			ExitCode:    e.ExitCode,
+			ID:                  e.ID,
+			ContainerPK:         container.ID,
+			Container:           e.Container,
+			ContainerID:         e.ContainerID,
+			ParsedContainerName: e.ParsedContainerName,
+			Type:                e.Type,
+			Message:             e.Message,
+			Timestamp:           e.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
+			OldImage:            e.OldImage,
+			NewImage:            e.NewImage,
+			OldImageID:          e.OldImageID,
+			NewImageID:          e.NewImageID,
+			Reason:              e.Reason,
+			DetailsJSON:         e.DetailsJSON,
+			ExitCode:            e.ExitCode,
 		},
 	}
 	if hasEventTotal {
@@ -793,49 +843,51 @@ func (m *Monitor) emitAlertRecord(ctx context.Context, a store.Alert) {
 
 	update := api.EventUpdate{
 		Container: api.ContainerResponse{
-			ID:                  container.ID,
-			Name:                container.Name,
-			ContainerID:         container.ContainerID,
-			Image:               container.Image,
-			ImageTag:            container.ImageTag,
-			ImageID:             container.ImageID,
-			CreatedAt:           container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-			RegisteredAt:        container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
-			StartedAt:           container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
-			FinishedAt:          formatMaybeTime(container.FinishedAt),
-			ExitCode:            container.ExitCode,
-			Status:              container.Status,
-			Role:                container.Role,
-			Caps:                container.Caps,
-			ReadOnly:            container.ReadOnly,
-			NoNewPrivileges:     container.NoNewPrivileges,
-			MemoryReservation:   container.MemoryReservation,
-			MemoryLimit:         container.MemoryLimit,
-			User:                container.User,
-			Present:             container.Present,
-			HealthStatus:        container.HealthStatus,
-			HealthFailingStreak: container.HealthFailingStreak,
-			UnhealthySince:      container.UnhealthySince.UTC().Format("2006-01-02T15:04:05Z"),
-			RestartLoop:         container.RestartLoop,
-			RestartStreak:       container.RestartStreak,
-			RestartLoopSince:    container.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
-			Healthcheck:         container.Healthcheck,
+			ID:                   container.ID,
+			Name:                 container.Name,
+			ContainerID:          container.ContainerID,
+			CurrentContainerName: container.CurrentContainerName,
+			Image:                container.Image,
+			ImageTag:             container.ImageTag,
+			ImageID:              container.ImageID,
+			CreatedAt:            container.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			RegisteredAt:         container.RegisteredAt.UTC().Format("2006-01-02T15:04:05Z"),
+			StartedAt:            container.StartedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			FinishedAt:           formatMaybeTime(container.FinishedAt),
+			ExitCode:             container.ExitCode,
+			Status:               container.Status,
+			Role:                 container.Role,
+			Caps:                 container.Caps,
+			ReadOnly:             container.ReadOnly,
+			NoNewPrivileges:      container.NoNewPrivileges,
+			MemoryReservation:    container.MemoryReservation,
+			MemoryLimit:          container.MemoryLimit,
+			User:                 container.User,
+			Present:              container.Present,
+			HealthStatus:         container.HealthStatus,
+			HealthFailingStreak:  container.HealthFailingStreak,
+			UnhealthySince:       container.UnhealthySince.UTC().Format("2006-01-02T15:04:05Z"),
+			RestartLoop:          container.RestartLoop,
+			RestartStreak:        container.RestartStreak,
+			RestartLoopSince:     container.RestartLoopSince.UTC().Format("2006-01-02T15:04:05Z"),
+			Healthcheck:          container.Healthcheck,
 		},
 		Alert: &api.AlertResponse{
-			ID:          a.ID,
-			ContainerPK: container.ID,
-			Container:   a.Container,
-			ContainerID: a.ContainerID,
-			Type:        a.Type,
-			Message:     a.Message,
-			Timestamp:   a.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
-			OldImage:    a.OldImage,
-			NewImage:    a.NewImage,
-			OldImageID:  a.OldImageID,
-			NewImageID:  a.NewImageID,
-			Reason:      a.Reason,
-			DetailsJSON: a.DetailsJSON,
-			ExitCode:    a.ExitCode,
+			ID:                  a.ID,
+			ContainerPK:         container.ID,
+			Container:           a.Container,
+			ContainerID:         a.ContainerID,
+			ParsedContainerName: a.ParsedContainerName,
+			Type:                a.Type,
+			Message:             a.Message,
+			Timestamp:           a.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
+			OldImage:            a.OldImage,
+			NewImage:            a.NewImage,
+			OldImageID:          a.OldImageID,
+			NewImageID:          a.NewImageID,
+			Reason:              a.Reason,
+			DetailsJSON:         a.DetailsJSON,
+			ExitCode:            a.ExitCode,
 		},
 	}
 	if hasAlertTotal {
@@ -864,14 +916,27 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		status = string(inspect.State.Status)
 	}
 
-	image := inspect.Config.Image
+	image := ""
+	labels := map[string]string{}
+	name := strings.TrimPrefix(inspect.Name, "/")
+	if inspect.Config != nil {
+		image = inspect.Config.Image
+		labels = inspect.Config.Labels
+	}
 	imageName, imageTag := parseImage(image)
 	caps := resolveCaps(m.capDefault, inspect.HostConfig.CapAdd, inspect.HostConfig.CapDrop)
-	user := inspect.Config.User
+	user := ""
+	if inspect.Config != nil {
+		user = inspect.Config.User
+	}
 	if user == "" {
 		user = "0:0"
 	}
-	role := resolveRole(inspect.Config.Labels)
+	role := resolveRole(labels)
+	serviceName := strings.TrimSpace(labels[composeServiceLabel])
+	if serviceName == "" {
+		serviceName = name
+	}
 	healthStatus := ""
 	healthFailingStreak := 0
 	if inspect.State != nil && inspect.State.Health != nil {
@@ -908,27 +973,29 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 	}
 
 	return store.Container{
-		ContainerID:         inspect.ID,
-		Image:               imageName,
-		ImageTag:            imageTag,
-		ImageID:             inspect.Image,
-		CreatedAt:           created,
-		StartedAt:           startedAt,
-		FinishedAt:          finishedAt,
-		ExitCode:            exitCode,
-		Status:              status,
-		Role:                role,
-		Caps:                caps,
-		ReadOnly:            inspect.HostConfig.ReadonlyRootfs,
-		NoNewPrivileges:     hasNoNewPrivileges(inspect.HostConfig),
-		MemoryReservation:   inspect.HostConfig.MemoryReservation,
-		MemoryLimit:         inspect.HostConfig.Memory,
-		User:                user,
-		HealthStatus:        healthStatus,
-		HealthFailingStreak: healthFailingStreak,
-		Healthcheck:         healthcheck,
-		UpdatedAt:           time.Now().UTC(),
-		Present:             true,
+		Name:                 serviceName,
+		ContainerID:          inspect.ID,
+		CurrentContainerName: name,
+		Image:                imageName,
+		ImageTag:             imageTag,
+		ImageID:              inspect.Image,
+		CreatedAt:            created,
+		StartedAt:            startedAt,
+		FinishedAt:           finishedAt,
+		ExitCode:             exitCode,
+		Status:               status,
+		Role:                 role,
+		Caps:                 caps,
+		ReadOnly:             inspect.HostConfig.ReadonlyRootfs,
+		NoNewPrivileges:      hasNoNewPrivileges(inspect.HostConfig),
+		MemoryReservation:    inspect.HostConfig.MemoryReservation,
+		MemoryLimit:          inspect.HostConfig.Memory,
+		User:                 user,
+		HealthStatus:         healthStatus,
+		HealthFailingStreak:  healthFailingStreak,
+		Healthcheck:          healthcheck,
+		UpdatedAt:            time.Now().UTC(),
+		Present:              true,
 	}
 }
 
@@ -1152,10 +1219,13 @@ type restartTracker struct {
 }
 
 func restartTrackerKey(containerID, name string) string {
+	if name != "" {
+		return "name:" + name
+	}
 	if containerID != "" {
 		return "id:" + containerID
 	}
-	return "name:" + name
+	return ""
 }
 
 func newRestartTracker(windowSeconds, threshold int) *restartTracker {
