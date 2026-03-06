@@ -31,8 +31,11 @@ func TestHandleStartPreservesRestartLoopForAutoRestartContainers(t *testing.T) {
 			RestartPolicy: container.RestartPolicy{Name: "always"},
 		},
 		Config: &container.Config{
-			Image:  "ghcr.io/example/imapsync:latest",
-			Labels: map[string]string{"healthmon.role": "service"},
+			Image: "ghcr.io/example/imapsync:latest",
+			Labels: map[string]string{
+				"healthmon.role":             "service",
+				"com.docker.compose.service": "imapsync",
+			},
 		},
 		Image: "sha256:image-auto",
 	}
