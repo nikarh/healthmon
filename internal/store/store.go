@@ -515,6 +515,9 @@ func (s *Store) resolveContainerName(containerPK int64, containerID, fallback st
 			}
 		}
 		s.mu.RUnlock()
+		if c, ok, _ := s.getContainerByPK(context.Background(), containerPK); ok && c.Name != "" {
+			return c.Name
+		}
 	}
 	if containerID != "" {
 		if c, ok, _ := s.GetContainerByContainerID(context.Background(), containerID); ok && c.Name != "" {
@@ -522,6 +525,83 @@ func (s *Store) resolveContainerName(containerPK int64, containerID, fallback st
 		}
 	}
 	return fallback
+}
+
+func (s *Store) getContainerByPK(ctx context.Context, containerPK int64) (Container, bool, error) {
+	if containerPK <= 0 {
+		return Container{}, false, nil
+	}
+
+	var c Container
+	var capsJSON string
+	var readOnly int
+	var present int
+	var memoryReservation int64
+	var memoryLimit int64
+	var createdAt string
+	var registeredAt string
+	var startedAt string
+	var updatedAt string
+	var lastEventID sql.NullInt64
+	var healthStatus string
+	var healthFailingStreak int
+	var unhealthySince string
+	var restartLoop int
+	var restartStreak int
+	var restartLoopSince string
+	var healthcheck sql.NullString
+	var noNewPrivileges int
+	var finishedAt sql.NullString
+	var exitCode sql.NullInt64
+
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, current_container_name, image, image_tag, image_id, created_at_container, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers WHERE id = ?`, containerPK).Scan(&c.ID, &c.Name, &c.ContainerID, &c.CurrentContainerName, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &finishedAt, &exitCode, &c.Status, &c.Role, &capsJSON, &readOnly, &noNewPrivileges, &memoryReservation, &memoryLimit, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck)
+	if err == sql.ErrNoRows {
+		return Container{}, false, nil
+	}
+	if err != nil {
+		return Container{}, false, err
+	}
+	if err := json.Unmarshal([]byte(capsJSON), &c.Caps); err != nil {
+		return Container{}, false, err
+	}
+	c.ReadOnly = readOnly == 1
+	c.NoNewPrivileges = noNewPrivileges == 1
+	c.MemoryReservation = memoryReservation
+	c.MemoryLimit = memoryLimit
+	c.CreatedAt = parseTime(createdAt)
+	c.RegisteredAt = parseTime(registeredAt)
+	c.StartedAt = parseTime(startedAt)
+	if finishedAt.Valid {
+		c.FinishedAt = parseTime(finishedAt.String)
+	}
+	if exitCode.Valid {
+		val := int(exitCode.Int64)
+		c.ExitCode = &val
+	}
+	c.UpdatedAt = parseTime(updatedAt)
+	if lastEventID.Valid {
+		c.LastEventID = lastEventID.Int64
+	}
+	c.Present = present == 1
+	c.HealthStatus = healthStatus
+	c.HealthFailingStreak = healthFailingStreak
+	c.UnhealthySince = parseTime(unhealthySince)
+	c.RestartLoop = restartLoop == 1
+	c.RestartStreak = restartStreak
+	c.RestartLoopSince = parseTime(restartLoopSince)
+	if parsed, err := parseHealthcheck(healthcheck); err != nil {
+		return Container{}, false, err
+	} else {
+		c.Healthcheck = parsed
+	}
+	if c.Role == "" {
+		c.Role = "service"
+	}
+
+	s.mu.Lock()
+	s.containers[c.Name] = &c
+	s.mu.Unlock()
+	return c, true, nil
 }
 
 func (s *Store) ListAllEvents(ctx context.Context, beforeID int64, limit int) ([]Event, error) {

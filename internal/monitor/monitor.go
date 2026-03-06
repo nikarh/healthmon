@@ -33,6 +33,13 @@ type Monitor struct {
 
 const composeServiceLabel = "com.docker.compose.service"
 
+var serviceNameLabels = []string{
+	"healthmon.name",
+	composeServiceLabel,
+	"io.podman.compose.service",
+	"com.docker.swarm.service.name",
+}
+
 func New(cfg config.Config, store *store.Store, server *api.Server) *Monitor {
 	return &Monitor{
 		cfg:        cfg,
@@ -933,10 +940,7 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		user = "0:0"
 	}
 	role := resolveRole(labels)
-	serviceName := strings.TrimSpace(labels[composeServiceLabel])
-	if serviceName == "" {
-		serviceName = name
-	}
+	serviceName := resolveServiceName(labels, name)
 	healthStatus := ""
 	healthFailingStreak := 0
 	if inspect.State != nil && inspect.State.Health != nil {
@@ -997,6 +1001,18 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		UpdatedAt:            time.Now().UTC(),
 		Present:              true,
 	}
+}
+
+func resolveServiceName(labels map[string]string, fallback string) string {
+	for _, key := range serviceNameLabels {
+		if labels == nil {
+			break
+		}
+		if value := strings.TrimSpace(labels[key]); value != "" {
+			return value
+		}
+	}
+	return fallback
 }
 
 func formatMaybeTime(t time.Time) string {
