@@ -135,7 +135,7 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 				info.RestartLoop = false
 				info.RestartStreak = 0
 				info.RestartLoopSince = time.Time{}
-					m.restarts.reset(restartTrackerKey(info.ContainerID, name))
+				m.restarts.reset(restartTrackerKey(info.ContainerID, name))
 			}
 		}
 		if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
@@ -233,7 +233,7 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 	}
 
 	if has && existing.ContainerID != id {
-			m.restarts.reset(restartTrackerKey(existing.ContainerID, existing.Name))
+		m.restarts.reset(restartTrackerKey(existing.ContainerID, existing.Name))
 		if existing.RestartLoop {
 			newInfo.RestartLoop = true
 			newInfo.RestartStreak = existing.RestartStreak
@@ -269,7 +269,7 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 		info.RestartLoop = false
 		info.RestartStreak = 0
 		info.RestartLoopSince = time.Time{}
-			m.restarts.reset(restartTrackerKey(id, name))
+		m.restarts.reset(restartTrackerKey(id, name))
 	}
 	if existing, ok := m.store.GetContainer(name); ok {
 		info.RegisteredAt = existing.RegisteredAt
