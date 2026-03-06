@@ -27,7 +27,7 @@ func (s *Store) Load(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, container_id, current_container_name, image, image_tag, image_id, created_at_container, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers`)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func (s *Store) Load(ctx context.Context) error {
 		var restartLoopSince string
 		var healthcheck sql.NullString
 
-		if err := rows.Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &finishedAt, &exitCode, &c.Status, &c.Role, &capsJSON, &readOnly, &noNewPrivileges, &memoryReservation, &memoryLimit, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.ContainerID, &c.CurrentContainerName, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &finishedAt, &exitCode, &c.Status, &c.Role, &capsJSON, &readOnly, &noNewPrivileges, &memoryReservation, &memoryLimit, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck); err != nil {
 			return err
 		}
 		if err := json.Unmarshal([]byte(capsJSON), &c.Caps); err != nil {
@@ -156,7 +156,7 @@ func (s *Store) GetContainerByName(ctx context.Context, name string) (Container,
 	var noNewPrivileges int
 	var finishedAt sql.NullString
 	var exitCode sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers WHERE name = ?`, name).Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &finishedAt, &exitCode, &c.Status, &c.Role, &capsJSON, &readOnly, &noNewPrivileges, &memoryReservation, &memoryLimit, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, current_container_name, image, image_tag, image_id, created_at_container, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers WHERE name = ?`, name).Scan(&c.ID, &c.Name, &c.ContainerID, &c.CurrentContainerName, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &finishedAt, &exitCode, &c.Status, &c.Role, &capsJSON, &readOnly, &noNewPrivileges, &memoryReservation, &memoryLimit, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck)
 	if err == sql.ErrNoRows {
 		return Container{}, false, nil
 	}
@@ -242,7 +242,7 @@ func (s *Store) GetContainerByContainerID(ctx context.Context, containerID strin
 	var noNewPrivileges int
 	var finishedAt sql.NullString
 	var exitCode sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, image, image_tag, image_id, created_at_container, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers WHERE container_id = ?`, containerID).Scan(&c.ID, &c.Name, &c.ContainerID, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &finishedAt, &exitCode, &c.Status, &c.Role, &capsJSON, &readOnly, &noNewPrivileges, &memoryReservation, &memoryLimit, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, container_id, current_container_name, image, image_tag, image_id, created_at_container, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck FROM containers WHERE container_id = ?`, containerID).Scan(&c.ID, &c.Name, &c.ContainerID, &c.CurrentContainerName, &c.Image, &c.ImageTag, &c.ImageID, &createdAt, &registeredAt, &startedAt, &finishedAt, &exitCode, &c.Status, &c.Role, &capsJSON, &readOnly, &noNewPrivileges, &memoryReservation, &memoryLimit, &c.User, &lastEventID, &updatedAt, &present, &healthStatus, &healthFailingStreak, &unhealthySince, &restartLoop, &restartStreak, &restartLoopSince, &healthcheck)
 	if err == sql.ErrNoRows {
 		return Container{}, false, nil
 	}
@@ -298,6 +298,9 @@ func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 	if c.Role == "" {
 		c.Role = "service"
 	}
+	if c.CurrentContainerName == "" {
+		c.CurrentContainerName = c.Name
+	}
 	now := time.Now().UTC()
 	if c.RegisteredAt.IsZero() {
 		if existing, ok := s.containers[c.Name]; ok && !existing.RegisteredAt.IsZero() {
@@ -345,10 +348,11 @@ func (s *Store) UpsertContainer(ctx context.Context, c Container) error {
 
 	var id int64
 	err = s.db.QueryRowContext(ctx, `
-INSERT INTO containers (name, container_id, image, image_tag, image_id, created_at_container, first_seen_at, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO containers (name, container_id, current_container_name, image, image_tag, image_id, created_at_container, first_seen_at, registered_at, started_at, finished_at, exit_code, status, role, caps, read_only, no_new_privileges, memory_reservation, memory_limit, user, last_event_id, updated_at, present, health_status, health_failing_streak, unhealthy_since, restart_loop, restart_streak, restart_loop_since, healthcheck)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET
   container_id=excluded.container_id,
+  current_container_name=excluded.current_container_name,
   image=excluded.image,
   image_tag=excluded.image_tag,
   image_id=excluded.image_id,
@@ -377,7 +381,7 @@ ON CONFLICT(name) DO UPDATE SET
   restart_loop_since=excluded.restart_loop_since,
   healthcheck=excluded.healthcheck
 RETURNING id
-`, c.Name, c.ContainerID, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.RegisteredAt), formatTime(c.RegisteredAt), formatTime(c.StartedAt), nullTime(c.FinishedAt), nullIntPtr(c.ExitCode), c.Status, c.Role, string(capsJSON), readOnly, boolToInt(c.NoNewPrivileges), c.MemoryReservation, c.MemoryLimit, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present, c.HealthStatus, c.HealthFailingStreak, formatTime(c.UnhealthySince), restartLoop, c.RestartStreak, formatTime(c.RestartLoopSince), healthcheckJSON).Scan(&id)
+`, c.Name, c.ContainerID, c.CurrentContainerName, c.Image, c.ImageTag, c.ImageID, formatTime(c.CreatedAt), formatTime(c.RegisteredAt), formatTime(c.RegisteredAt), formatTime(c.StartedAt), nullTime(c.FinishedAt), nullIntPtr(c.ExitCode), c.Status, c.Role, string(capsJSON), readOnly, boolToInt(c.NoNewPrivileges), c.MemoryReservation, c.MemoryLimit, c.User, nullInt(c.LastEventID), formatTime(c.UpdatedAt), present, c.HealthStatus, c.HealthFailingStreak, formatTime(c.UnhealthySince), restartLoop, c.RestartStreak, formatTime(c.RestartLoopSince), healthcheckJSON).Scan(&id)
 	if err != nil {
 		return err
 	}
@@ -389,9 +393,9 @@ RETURNING id
 
 func (s *Store) AddEvent(ctx context.Context, e Event) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO events (container_pk, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, exit_code)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, e.ContainerPK, e.Container, e.ContainerID, e.Type, e.Severity, e.Message, formatTime(e.Timestamp), nullStr(e.OldImage), nullStr(e.NewImage), nullStr(e.OldImageID), nullStr(e.NewImageID), nullStr(e.Reason), nullStr(e.DetailsJSON), nullIntPtr(e.ExitCode))
+INSERT INTO events (container_pk, container_name, container_id, parsed_container_name, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, exit_code)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, e.ContainerPK, e.Container, e.ContainerID, nullStr(e.ParsedContainerName), e.Type, e.Severity, e.Message, formatTime(e.Timestamp), nullStr(e.OldImage), nullStr(e.NewImage), nullStr(e.OldImageID), nullStr(e.NewImageID), nullStr(e.Reason), nullStr(e.DetailsJSON), nullIntPtr(e.ExitCode))
 	if err != nil {
 		return 0, err
 	}
@@ -428,6 +432,7 @@ func (s *Store) ListEvents(ctx context.Context, container string, beforeID int64
 
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk, exit_code
+     , parsed_container_name
 FROM events
 WHERE container_pk = ? AND id < ?
 ORDER BY id DESC
@@ -444,7 +449,8 @@ LIMIT ?
 		var ts string
 		var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
 		var exitCode sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode); err != nil {
+		var parsedContainerName sql.NullString
+		if err := rows.Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode, &parsedContainerName); err != nil {
 			return nil, err
 		}
 		e.Timestamp = parseTime(ts)
@@ -469,6 +475,9 @@ LIMIT ?
 		if exitCode.Valid {
 			val := int(exitCode.Int64)
 			e.ExitCode = &val
+		}
+		if parsedContainerName.Valid {
+			e.ParsedContainerName = parsedContainerName.String
 		}
 		e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 		items = append(items, e)
@@ -525,6 +534,7 @@ func (s *Store) ListAllEvents(ctx context.Context, beforeID int64, limit int) ([
 
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk, exit_code
+     , parsed_container_name
 FROM events
 WHERE id < ?
 ORDER BY id DESC
@@ -541,7 +551,8 @@ LIMIT ?
 		var ts string
 		var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
 		var exitCode sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode); err != nil {
+		var parsedContainerName sql.NullString
+		if err := rows.Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode, &parsedContainerName); err != nil {
 			return nil, err
 		}
 		e.Timestamp = parseTime(ts)
@@ -567,6 +578,9 @@ LIMIT ?
 			val := int(exitCode.Int64)
 			e.ExitCode = &val
 		}
+		if parsedContainerName.Valid {
+			e.ParsedContainerName = parsedContainerName.String
+		}
 		e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 		items = append(items, e)
 	}
@@ -586,9 +600,9 @@ func (s *Store) CountAllEvents(ctx context.Context) (int64, error) {
 
 func (s *Store) AddAlert(ctx context.Context, a Alert) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO alerts (container_pk, container_name, container_id, alert_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, exit_code)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, a.ContainerPK, a.Container, a.ContainerID, a.Type, a.Severity, a.Message, formatTime(a.Timestamp), nullStr(a.OldImage), nullStr(a.NewImage), nullStr(a.OldImageID), nullStr(a.NewImageID), nullStr(a.Reason), nullStr(a.DetailsJSON), nullIntPtr(a.ExitCode))
+INSERT INTO alerts (container_pk, container_name, container_id, parsed_container_name, alert_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, exit_code)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, a.ContainerPK, a.Container, a.ContainerID, nullStr(a.ParsedContainerName), a.Type, a.Severity, a.Message, formatTime(a.Timestamp), nullStr(a.OldImage), nullStr(a.NewImage), nullStr(a.OldImageID), nullStr(a.NewImageID), nullStr(a.Reason), nullStr(a.DetailsJSON), nullIntPtr(a.ExitCode))
 	if err != nil {
 		return 0, err
 	}
@@ -609,6 +623,7 @@ func (s *Store) ListAllAlerts(ctx context.Context, beforeID int64, limit int) ([
 
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, container_name, container_id, alert_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk, exit_code
+     , parsed_container_name
 FROM alerts
 WHERE id < ?
 ORDER BY id DESC
@@ -625,7 +640,8 @@ LIMIT ?
 		var ts string
 		var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
 		var exitCode sql.NullInt64
-		if err := rows.Scan(&a.ID, &a.Container, &a.ContainerID, &a.Type, &a.Severity, &a.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &a.ContainerPK, &exitCode); err != nil {
+		var parsedContainerName sql.NullString
+		if err := rows.Scan(&a.ID, &a.Container, &a.ContainerID, &a.Type, &a.Severity, &a.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &a.ContainerPK, &exitCode, &parsedContainerName); err != nil {
 			return nil, err
 		}
 		a.Timestamp = parseTime(ts)
@@ -650,6 +666,9 @@ LIMIT ?
 		if exitCode.Valid {
 			val := int(exitCode.Int64)
 			a.ExitCode = &val
+		}
+		if parsedContainerName.Valid {
+			a.ParsedContainerName = parsedContainerName.String
 		}
 		a.Container = s.resolveContainerName(a.ContainerPK, a.ContainerID, a.Container)
 		items = append(items, a)
@@ -676,11 +695,13 @@ func (s *Store) GetEvent(ctx context.Context, id int64) (Event, bool, error) {
 	var ts string
 	var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
 	var exitCode sql.NullInt64
+	var parsedContainerName sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk, exit_code
+     , parsed_container_name
 FROM events
 WHERE id = ?
-`, id).Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode)
+`, id).Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode, &parsedContainerName)
 	if err == sql.ErrNoRows {
 		return Event{}, false, nil
 	}
@@ -709,6 +730,9 @@ WHERE id = ?
 	if exitCode.Valid {
 		val := int(exitCode.Int64)
 		e.ExitCode = &val
+	}
+	if parsedContainerName.Valid {
+		e.ParsedContainerName = parsedContainerName.String
 	}
 	e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 	return e, true, nil
@@ -722,13 +746,15 @@ func (s *Store) GetLatestEventByContainerPK(ctx context.Context, containerPK int
 	var ts string
 	var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
 	var exitCode sql.NullInt64
+	var parsedContainerName sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, container_name, container_id, event_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk, exit_code
+     , parsed_container_name
 FROM events
 WHERE container_pk = ?
 ORDER BY ts DESC
 LIMIT 1
-`, containerPK).Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode)
+`, containerPK).Scan(&e.ID, &e.Container, &e.ContainerID, &e.Type, &e.Severity, &e.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &e.ContainerPK, &exitCode, &parsedContainerName)
 	if err == sql.ErrNoRows {
 		return Event{}, false, nil
 	}
@@ -757,6 +783,9 @@ LIMIT 1
 	if exitCode.Valid {
 		val := int(exitCode.Int64)
 		e.ExitCode = &val
+	}
+	if parsedContainerName.Valid {
+		e.ParsedContainerName = parsedContainerName.String
 	}
 	e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 	return e, true, nil
@@ -785,13 +814,15 @@ func (s *Store) GetLatestRestartLoopAlertByContainerPK(ctx context.Context, cont
 	var ts string
 	var oldImage, newImage, oldImageID, newImageID, reason, details sql.NullString
 	var exitCode sql.NullInt64
+	var parsedContainerName sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, container_name, container_id, alert_type, severity, message, ts, old_image, new_image, old_image_id, new_image_id, reason, details, container_pk, exit_code
+     , parsed_container_name
 FROM alerts
 WHERE container_pk = ? AND alert_type IN ('restart_loop', 'restart_healed')
 ORDER BY id DESC
 LIMIT 1
-`, containerPK).Scan(&a.ID, &a.Container, &a.ContainerID, &a.Type, &a.Severity, &a.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &a.ContainerPK, &exitCode)
+`, containerPK).Scan(&a.ID, &a.Container, &a.ContainerID, &a.Type, &a.Severity, &a.Message, &ts, &oldImage, &newImage, &oldImageID, &newImageID, &reason, &details, &a.ContainerPK, &exitCode, &parsedContainerName)
 	if err == sql.ErrNoRows {
 		return Alert{}, false, nil
 	}
@@ -820,6 +851,9 @@ LIMIT 1
 	if exitCode.Valid {
 		val := int(exitCode.Int64)
 		a.ExitCode = &val
+	}
+	if parsedContainerName.Valid {
+		a.ParsedContainerName = parsedContainerName.String
 	}
 	a.Container = s.resolveContainerName(a.ContainerPK, a.ContainerID, a.Container)
 	return a, true, nil
@@ -897,166 +931,36 @@ func (s *Store) MarkAbsentExcept(ctx context.Context, presentNames map[string]st
 }
 
 func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, info Container) error {
-	if oldName == "" || newName == "" || oldName == newName {
+	if newName == "" {
 		return nil
 	}
-
-	s.mu.Lock()
-	oldContainer, ok := s.containers[oldName]
-	s.mu.Unlock()
-	if !ok {
-		if byID, byName := s.findContainerByID(info.ContainerID); byID != nil {
-			oldContainer = byID
-			oldName = byName
+	if info.Name == "" {
+		if byID, _, ok := s.FindContainerByID(info.ContainerID); ok {
+			info.Name = byID.Name
 		} else {
-			return nil
+			info.Name = oldName
 		}
 	}
-
-	info.Name = newName
-	info.RegisteredAt = oldContainer.RegisteredAt
-	info.StartedAt = oldContainer.StartedAt
-	info.FinishedAt = oldContainer.FinishedAt
-	info.ExitCode = oldContainer.ExitCode
-	info.LastEventID = oldContainer.LastEventID
-	info.MemoryReservation = oldContainer.MemoryReservation
-	info.MemoryLimit = oldContainer.MemoryLimit
-	info.UnhealthySince = oldContainer.UnhealthySince
-	info.RestartLoopSince = oldContainer.RestartLoopSince
-	info.Present = true
-	if info.Role == "" {
-		info.Role = oldContainer.Role
-	}
-
-	s.mu.RLock()
-	targetContainer, hasTarget := s.containers[newName]
-	s.mu.RUnlock()
-
-	if !hasTarget {
-		if _, err := s.db.ExecContext(ctx, `UPDATE containers SET name = ?, container_id = ?, image = ?, image_tag = ?, image_id = ?, created_at_container = ?, registered_at = ?, started_at = ?, finished_at = ?, exit_code = ?, status = ?, role = ?, caps = ?, read_only = ?, no_new_privileges = ?, memory_reservation = ?, memory_limit = ?, user = ?, last_event_id = ?, updated_at = ?, present = 1, health_status = ?, health_failing_streak = ?, unhealthy_since = ?, restart_loop = ?, restart_streak = ?, restart_loop_since = ?, healthcheck = ? WHERE name = ?`,
-			newName,
-			info.ContainerID,
-			info.Image,
-			info.ImageTag,
-			info.ImageID,
-			formatTime(info.CreatedAt),
-			formatTime(info.RegisteredAt),
-			formatTime(info.StartedAt),
-			nullTime(info.FinishedAt),
-			nullIntPtr(info.ExitCode),
-			info.Status,
-			info.Role,
-			string(mustJSON(info.Caps)),
-			boolToInt(info.ReadOnly),
-			boolToInt(info.NoNewPrivileges),
-			info.MemoryReservation,
-			info.MemoryLimit,
-			info.User,
-			nullInt(info.LastEventID),
-			formatTime(info.UpdatedAt),
-			info.HealthStatus,
-			info.HealthFailingStreak,
-			formatTime(info.UnhealthySince),
-			boolToInt(info.RestartLoop),
-			info.RestartStreak,
-			formatTime(info.RestartLoopSince),
-			nullStr(mustHealthcheck(info.Healthcheck)),
-			oldName,
-		); err != nil {
-			return err
-		}
-		_, _ = s.db.ExecContext(ctx, `UPDATE events SET container_name = ? WHERE container_pk = ?`, newName, oldContainer.ID)
-		_, _ = s.db.ExecContext(ctx, `UPDATE alerts SET container_name = ? WHERE container_pk = ?`, newName, oldContainer.ID)
-		s.mu.Lock()
-		delete(s.containers, oldName)
-		info.ID = oldContainer.ID
-		s.containers[newName] = &info
-		s.mu.Unlock()
+	if info.Name == "" {
 		return nil
 	}
-
-	if _, err := s.db.ExecContext(ctx, `UPDATE events SET container_pk = ?, container_name = ? WHERE container_pk = ?`, targetContainer.ID, newName, oldContainer.ID); err != nil {
-		return err
-	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE alerts SET container_pk = ?, container_name = ? WHERE container_pk = ?`, targetContainer.ID, newName, oldContainer.ID); err != nil {
-		return err
-	}
-
-	if _, err := s.db.ExecContext(ctx, `UPDATE containers SET container_id = ?, image = ?, image_tag = ?, image_id = ?, created_at_container = ?, registered_at = ?, started_at = ?, finished_at = ?, exit_code = ?, status = ?, role = ?, caps = ?, read_only = ?, no_new_privileges = ?, memory_reservation = ?, memory_limit = ?, user = ?, updated_at = ?, present = 1, health_status = ?, health_failing_streak = ?, unhealthy_since = ?, restart_loop = ?, restart_streak = ?, restart_loop_since = ?, healthcheck = ? WHERE id = ?`,
-		info.ContainerID,
-		info.Image,
-		info.ImageTag,
-		info.ImageID,
-		formatTime(info.CreatedAt),
-		formatTime(info.RegisteredAt),
-		formatTime(info.StartedAt),
-		nullTime(info.FinishedAt),
-		nullIntPtr(info.ExitCode),
-		info.Status,
-		info.Role,
-		string(mustJSON(info.Caps)),
-		boolToInt(info.ReadOnly),
-		boolToInt(info.NoNewPrivileges),
-		info.MemoryReservation,
-		info.MemoryLimit,
-		info.User,
-		formatTime(info.UpdatedAt),
-		info.HealthStatus,
-		info.HealthFailingStreak,
-		formatTime(info.UnhealthySince),
-		boolToInt(info.RestartLoop),
-		info.RestartStreak,
-		formatTime(info.RestartLoopSince),
-		nullStr(mustHealthcheck(info.Healthcheck)),
-		targetContainer.ID,
-	); err != nil {
-		return err
-	}
-
-	latestID, _ := s.latestEventID(ctx, targetContainer.ID)
-	_, _ = s.db.ExecContext(ctx, `UPDATE containers SET last_event_id = ? WHERE id = ?`, nullInt(latestID), targetContainer.ID)
-
-	_, _ = s.db.ExecContext(ctx, `UPDATE containers SET present = 0, updated_at = ? WHERE id = ?`, formatTime(time.Now().UTC()), oldContainer.ID)
-
-	s.mu.Lock()
-	if c, ok := s.containers[newName]; ok {
-		c.ContainerID = info.ContainerID
-		c.Image = info.Image
-		c.ImageTag = info.ImageTag
-		c.ImageID = info.ImageID
-		c.CreatedAt = info.CreatedAt
-		c.RegisteredAt = info.RegisteredAt
-		c.StartedAt = info.StartedAt
-		c.FinishedAt = info.FinishedAt
-		c.ExitCode = info.ExitCode
-		c.Status = info.Status
-		c.Role = info.Role
-		c.Caps = info.Caps
-		c.ReadOnly = info.ReadOnly
-		c.NoNewPrivileges = info.NoNewPrivileges
-		c.MemoryReservation = info.MemoryReservation
-		c.MemoryLimit = info.MemoryLimit
-		c.User = info.User
-		c.UpdatedAt = info.UpdatedAt
-		c.Present = true
-		c.HealthStatus = info.HealthStatus
-		c.HealthFailingStreak = info.HealthFailingStreak
-		c.UnhealthySince = info.UnhealthySince
-		c.RestartLoop = info.RestartLoop
-		c.RestartStreak = info.RestartStreak
-		c.RestartLoopSince = info.RestartLoopSince
-		c.Healthcheck = info.Healthcheck
-		if latestID > 0 {
-			c.LastEventID = latestID
+	if existing, ok := s.GetContainer(info.Name); ok {
+		if info.RegisteredAt.IsZero() {
+			info.RegisteredAt = existing.RegisteredAt
+		}
+		if info.StartedAt.IsZero() {
+			info.StartedAt = existing.StartedAt
+		}
+		if info.LastEventID == 0 {
+			info.LastEventID = existing.LastEventID
+		}
+		if info.Role == "" {
+			info.Role = existing.Role
 		}
 	}
-	if c, ok := s.containers[oldName]; ok {
-		c.Present = false
-		c.UpdatedAt = time.Now().UTC()
-		c.LastEventID = 0
-	}
-	s.mu.Unlock()
-	return nil
+	info.CurrentContainerName = newName
+	info.Present = true
+	return s.UpsertContainer(ctx, info)
 }
 
 func (s *Store) findContainerByID(id string) (*Container, string) {

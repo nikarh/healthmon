@@ -3,35 +3,36 @@ package store
 import "time"
 
 type Container struct {
-	ID                  int64
-	Name                string
-	ContainerID         string
-	Image               string
-	ImageTag            string
-	ImageID             string
-	CreatedAt           time.Time
-	RegisteredAt        time.Time
-	StartedAt           time.Time
-	FinishedAt          time.Time
-	ExitCode            *int
-	Status              string
-	Role                string
-	Caps                []string
-	ReadOnly            bool
-	NoNewPrivileges     bool
-	MemoryReservation   int64
-	MemoryLimit         int64
-	User                string
-	LastEventID         int64
-	UpdatedAt           time.Time
-	Present             bool
-	HealthStatus        string
-	HealthFailingStreak int
-	UnhealthySince      time.Time
-	RestartLoop         bool
-	RestartStreak       int
-	RestartLoopSince    time.Time
-	Healthcheck         *Healthcheck
+	ID                   int64
+	Name                 string
+	ContainerID          string
+	CurrentContainerName string
+	Image                string
+	ImageTag             string
+	ImageID              string
+	CreatedAt            time.Time
+	RegisteredAt         time.Time
+	StartedAt            time.Time
+	FinishedAt           time.Time
+	ExitCode             *int
+	Status               string
+	Role                 string
+	Caps                 []string
+	ReadOnly             bool
+	NoNewPrivileges      bool
+	MemoryReservation    int64
+	MemoryLimit          int64
+	User                 string
+	LastEventID          int64
+	UpdatedAt            time.Time
+	Present              bool
+	HealthStatus         string
+	HealthFailingStreak  int
+	UnhealthySince       time.Time
+	RestartLoop          bool
+	RestartStreak        int
+	RestartLoopSince     time.Time
+	Healthcheck          *Healthcheck
 }
 
 type Healthcheck struct {
@@ -44,37 +45,39 @@ type Healthcheck struct {
 }
 
 type Event struct {
-	ID          int64
-	ContainerPK int64
-	Container   string
-	ContainerID string
-	Type        string
-	Severity    string
-	Message     string
-	Timestamp   time.Time
-	OldImage    string
-	NewImage    string
-	OldImageID  string
-	NewImageID  string
-	Reason      string
-	DetailsJSON string
-	ExitCode    *int
+	ID                  int64
+	ContainerPK         int64
+	Container           string
+	ContainerID         string
+	ParsedContainerName string
+	Type                string
+	Severity            string
+	Message             string
+	Timestamp           time.Time
+	OldImage            string
+	NewImage            string
+	OldImageID          string
+	NewImageID          string
+	Reason              string
+	DetailsJSON         string
+	ExitCode            *int
 }
 
 type Alert struct {
-	ID          int64
-	ContainerPK int64
-	Container   string
-	ContainerID string
-	Type        string
-	Severity    string
-	Message     string
-	Timestamp   time.Time
-	OldImage    string
-	NewImage    string
-	OldImageID  string
-	NewImageID  string
-	Reason      string
-	DetailsJSON string
-	ExitCode    *int
+	ID                  int64
+	ContainerPK         int64
+	Container           string
+	ContainerID         string
+	ParsedContainerName string
+	Type                string
+	Severity            string
+	Message             string
+	Timestamp           time.Time
+	OldImage            string
+	NewImage            string
+	OldImageID          string
+	NewImageID          string
+	Reason              string
+	DetailsJSON         string
+	ExitCode            *int
 }
