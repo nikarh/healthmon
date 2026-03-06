@@ -31,3 +31,22 @@ func TestRestartTrackerDoesNotReenterWithoutHeal(t *testing.T) {
 		t.Fatal("existing loop should not re-enter without a heal")
 	}
 }
+
+func TestRestartTrackerUsesStableContainerIdentityAcrossRename(t *testing.T) {
+	tracker := newRestartTracker(300, 3)
+	base := time.Date(2026, time.March, 1, 17, 22, 58, 0, time.UTC)
+	key := restartTrackerKey("606392128d71", "elastic_ride")
+
+	if _, entered := tracker.record(key, base); entered {
+		t.Fatal("first restart should not enter loop")
+	}
+	if _, entered := tracker.record(key, base.Add(22*time.Second)); entered {
+		t.Fatal("second restart should not enter loop")
+	}
+	if _, entered := tracker.record(restartTrackerKey("606392128d71", "affine"), base.Add(40*time.Second)); !entered {
+		t.Fatal("third restart for same container id should enter loop even after rename")
+	}
+	if _, entered := tracker.record(restartTrackerKey("606392128d71", "elastic_ride"), base.Add(61*time.Second)); entered {
+		t.Fatal("same container id should not re-enter loop just because the name changed")
+	}
+}

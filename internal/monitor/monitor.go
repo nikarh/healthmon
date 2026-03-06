@@ -129,13 +129,13 @@ func (m *Monitor) syncExisting(ctx context.Context) error {
 					info.RestartLoop = false
 					info.RestartStreak = 0
 					info.RestartLoopSince = time.Time{}
-					m.restarts.markHealed(name)
+					m.restarts.markHealed(restartTrackerKey(info.ContainerID, name))
 				}
 			} else {
 				info.RestartLoop = false
 				info.RestartStreak = 0
 				info.RestartLoopSince = time.Time{}
-				m.restarts.reset(name)
+					m.restarts.reset(restartTrackerKey(info.ContainerID, name))
 			}
 		}
 		if strings.ToLower(info.HealthStatus) == "unhealthy" && info.UnhealthySince.IsZero() {
@@ -233,7 +233,7 @@ func (m *Monitor) handleCreate(ctx context.Context, name, id string) {
 	}
 
 	if has && existing.ContainerID != id {
-		m.restarts.reset(name)
+			m.restarts.reset(restartTrackerKey(existing.ContainerID, existing.Name))
 		if existing.RestartLoop {
 			newInfo.RestartLoop = true
 			newInfo.RestartStreak = existing.RestartStreak
@@ -269,7 +269,7 @@ func (m *Monitor) handleStart(ctx context.Context, name, id string) {
 		info.RestartLoop = false
 		info.RestartStreak = 0
 		info.RestartLoopSince = time.Time{}
-		m.restarts.reset(name)
+			m.restarts.reset(restartTrackerKey(id, name))
 	}
 	if existing, ok := m.store.GetContainer(name); ok {
 		info.RegisteredAt = existing.RegisteredAt
@@ -341,8 +341,6 @@ func (m *Monitor) handleRename(ctx context.Context, msg events.Message, newName 
 	if info.RegisteredAt.IsZero() {
 		info.RegisteredAt = minTime(info.CreatedAt, time.Now().UTC())
 	}
-	m.restarts.reset(oldName)
-	m.restarts.reset(newName)
 	_ = m.store.RenameContainer(ctx, oldName, newName, info)
 	m.emitInfo(ctx, newName, msg.Actor.ID, "renamed", fmt.Sprintf("Container renamed %s -> %s", oldName, newName), "", "", "", "", "rename", nil)
 }
@@ -414,23 +412,27 @@ func (m *Monitor) handleHealth(ctx context.Context, name, id, status string) {
 
 func (m *Monitor) handleRestartLike(ctx context.Context, name, id, reason string, exitCode *int, signal string) {
 	now := time.Now().UTC()
+	restartKey := restartTrackerKey(id, name)
 
 	inspect, inspectErr := m.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	hasAutoRestart := inspectErr == nil && hasAutoRestartPolicy(inspect.Container)
 	wasInLoop := false
 	if existing, ok := m.store.GetContainer(name); ok {
 		wasInLoop = existing.RestartLoop
+		if existing.ContainerID != "" {
+			restartKey = restartTrackerKey(existing.ContainerID, existing.Name)
+		}
 	}
 	if !hasAutoRestart {
-		m.restarts.reset(name)
+		m.restarts.reset(restartKey)
 	}
 
 	streak := 0
 	enteredLoop := false
 	if hasAutoRestart {
-		streak, enteredLoop = m.restarts.record(name, now)
+		streak, enteredLoop = m.restarts.record(restartKey, now)
 	}
-	inLoop := hasAutoRestart && (m.restarts.inLoop(name) || wasInLoop)
+	inLoop := hasAutoRestart && (m.restarts.inLoop(restartKey) || wasInLoop)
 	message := fmt.Sprintf("Restart event: %s", reason)
 	if signal != "" {
 		message = fmt.Sprintf("Restart event: %s (signal %s)", reason, signal)
@@ -615,7 +617,7 @@ func (m *Monitor) checkHeals(ctx context.Context) {
 		c.RestartLoopSince = time.Time{}
 		c.UpdatedAt = now
 		_ = m.store.UpsertContainer(ctx, c)
-		m.restarts.markHealed(c.Name)
+		m.restarts.markHealed(restartTrackerKey(c.ContainerID, c.Name))
 		message := "Restart loop healed"
 		if streak > 0 {
 			message = fmt.Sprintf("Restart loop healed after %d restarts", streak)
@@ -1147,6 +1149,13 @@ type restartTracker struct {
 	mu        sync.Mutex
 	data      map[string][]time.Time
 	loop      map[string]bool
+}
+
+func restartTrackerKey(containerID, name string) string {
+	if containerID != "" {
+		return "id:" + containerID
+	}
+	return "name:" + name
 }
 
 func newRestartTracker(windowSeconds, threshold int) *restartTracker {
