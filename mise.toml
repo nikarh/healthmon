@@ -1,6 +1,6 @@
 [tools]
 go = "1.26"
-node = "25.6"
+node = "25.7"
 
 [tasks.dev]
 run = "bash scripts/dev.sh"
