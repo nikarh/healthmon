@@ -470,6 +470,7 @@ LIMIT ?
 			val := int(exitCode.Int64)
 			e.ExitCode = &val
 		}
+		e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 		items = append(items, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -492,6 +493,26 @@ func (s *Store) CountEventsByContainer(ctx context.Context, container string) (i
 		return 0, err
 	}
 	return total, nil
+}
+
+func (s *Store) resolveContainerName(containerPK int64, containerID, fallback string) string {
+	if containerPK > 0 {
+		s.mu.RLock()
+		for _, c := range s.containers {
+			if c.ID == containerPK {
+				name := c.Name
+				s.mu.RUnlock()
+				return name
+			}
+		}
+		s.mu.RUnlock()
+	}
+	if containerID != "" {
+		if c, ok, _ := s.GetContainerByContainerID(context.Background(), containerID); ok && c.Name != "" {
+			return c.Name
+		}
+	}
+	return fallback
 }
 
 func (s *Store) ListAllEvents(ctx context.Context, beforeID int64, limit int) ([]Event, error) {
@@ -546,6 +567,7 @@ LIMIT ?
 			val := int(exitCode.Int64)
 			e.ExitCode = &val
 		}
+		e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 		items = append(items, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -629,6 +651,7 @@ LIMIT ?
 			val := int(exitCode.Int64)
 			a.ExitCode = &val
 		}
+		a.Container = s.resolveContainerName(a.ContainerPK, a.ContainerID, a.Container)
 		items = append(items, a)
 	}
 	if err := rows.Err(); err != nil {
@@ -687,6 +710,7 @@ WHERE id = ?
 		val := int(exitCode.Int64)
 		e.ExitCode = &val
 	}
+	e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 	return e, true, nil
 }
 
@@ -734,6 +758,7 @@ LIMIT 1
 		val := int(exitCode.Int64)
 		e.ExitCode = &val
 	}
+	e.Container = s.resolveContainerName(e.ContainerPK, e.ContainerID, e.Container)
 	return e, true, nil
 }
 
@@ -796,6 +821,7 @@ LIMIT 1
 		val := int(exitCode.Int64)
 		a.ExitCode = &val
 	}
+	a.Container = s.resolveContainerName(a.ContainerPK, a.ContainerID, a.Container)
 	return a, true, nil
 }
 
@@ -940,6 +966,7 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 			return err
 		}
 		_, _ = s.db.ExecContext(ctx, `UPDATE events SET container_name = ? WHERE container_pk = ?`, newName, oldContainer.ID)
+		_, _ = s.db.ExecContext(ctx, `UPDATE alerts SET container_name = ? WHERE container_pk = ?`, newName, oldContainer.ID)
 		s.mu.Lock()
 		delete(s.containers, oldName)
 		info.ID = oldContainer.ID
@@ -949,6 +976,9 @@ func (s *Store) RenameContainer(ctx context.Context, oldName, newName string, in
 	}
 
 	if _, err := s.db.ExecContext(ctx, `UPDATE events SET container_pk = ?, container_name = ? WHERE container_pk = ?`, targetContainer.ID, newName, oldContainer.ID); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE alerts SET container_pk = ?, container_name = ? WHERE container_pk = ?`, targetContainer.ID, newName, oldContainer.ID); err != nil {
 		return err
 	}
 
