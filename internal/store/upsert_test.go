@@ -101,7 +101,7 @@ func TestUpsertKeepsContainerIDAfterEvents(t *testing.T) {
 	}
 }
 
-func TestRenameContainerUpdatesCurrentNamesForHistory(t *testing.T) {
+func TestHistoryKeepsParsedContainerNamesSeparateFromServiceName(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "healthmon.db")
 	dbConn, err := db.Open(dbPath)
@@ -121,58 +121,61 @@ func TestRenameContainerUpdatesCurrentNamesForHistory(t *testing.T) {
 
 	now := time.Now().UTC()
 	cont := Container{
-		Name:          "elastic_ride",
-		ContainerID:   "cid-rename",
-		Image:         "affine",
-		ImageTag:      "stable",
-		ImageID:       "img-affine",
-		CreatedAt:     now.Add(-time.Hour),
-		RegisteredAt:  now.Add(-time.Hour),
-		StartedAt:     now.Add(-30 * time.Minute),
-		Status:        "running",
-		Role:          "service",
-		Caps:          []string{},
-		ReadOnly:      true,
-		User:          "1000:1000",
-		UpdatedAt:     now,
-		Present:       true,
-		RestartLoop:   true,
-		RestartStreak: 7,
+		Name:                 "affine",
+		ContainerID:          "cid-rename",
+		CurrentContainerName: "elastic_ride",
+		Image:                "affine",
+		ImageTag:             "stable",
+		ImageID:              "img-affine",
+		CreatedAt:            now.Add(-time.Hour),
+		RegisteredAt:         now.Add(-time.Hour),
+		StartedAt:            now.Add(-30 * time.Minute),
+		Status:               "running",
+		Role:                 "service",
+		Caps:                 []string{},
+		ReadOnly:             true,
+		User:                 "1000:1000",
+		UpdatedAt:            now,
+		Present:              true,
+		RestartLoop:          true,
+		RestartStreak:        7,
 	}
 	if err := st.UpsertContainer(ctx, cont); err != nil {
 		t.Fatalf("upsert container: %v", err)
 	}
-	created, ok := st.GetContainer("elastic_ride")
+	created, ok := st.GetContainer("affine")
 	if !ok {
 		t.Fatalf("expected container in cache")
 	}
 
 	if _, err := st.AddEvent(ctx, Event{
-		ContainerPK: created.ID,
-		Container:   created.Name,
-		ContainerID: created.ContainerID,
-		Type:        "restart",
-		Severity:    "blue",
-		Message:     "Restart event: die",
-		Timestamp:   now.Add(time.Second),
-		Reason:      "die",
+		ContainerPK:         created.ID,
+		Container:           created.Name,
+		ContainerID:         created.ContainerID,
+		ParsedContainerName: "elastic_ride",
+		Type:                "restart",
+		Severity:            "blue",
+		Message:             "Restart event: die",
+		Timestamp:           now.Add(time.Second),
+		Reason:              "die",
 	}); err != nil {
 		t.Fatalf("add event: %v", err)
 	}
 	if _, err := st.AddAlert(ctx, Alert{
-		ContainerPK: created.ID,
-		Container:   created.Name,
-		ContainerID: created.ContainerID,
-		Type:        "restart_loop",
-		Severity:    "red",
-		Message:     "Restart loop detected",
-		Timestamp:   now.Add(2 * time.Second),
+		ContainerPK:         created.ID,
+		Container:           created.Name,
+		ContainerID:         created.ContainerID,
+		ParsedContainerName: "elastic_ride",
+		Type:                "restart_loop",
+		Severity:            "red",
+		Message:             "Restart loop detected",
+		Timestamp:           now.Add(2 * time.Second),
 	}); err != nil {
 		t.Fatalf("add alert: %v", err)
 	}
 
 	renamed := created
-	renamed.Name = "affine"
+	renamed.CurrentContainerName = "affine"
 	renamed.UpdatedAt = now.Add(3 * time.Second)
 	if err := st.RenameContainer(ctx, "elastic_ride", "affine", renamed); err != nil {
 		t.Fatalf("rename container: %v", err)
@@ -186,7 +189,10 @@ func TestRenameContainerUpdatesCurrentNamesForHistory(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
 	if events[0].Container != "affine" {
-		t.Fatalf("expected current event container name affine, got %q", events[0].Container)
+		t.Fatalf("expected service name affine, got %q", events[0].Container)
+	}
+	if events[0].ParsedContainerName != "elastic_ride" {
+		t.Fatalf("expected parsed event name elastic_ride, got %q", events[0].ParsedContainerName)
 	}
 
 	alerts, err := st.ListAllAlerts(ctx, 0, 10)
@@ -197,6 +203,17 @@ func TestRenameContainerUpdatesCurrentNamesForHistory(t *testing.T) {
 		t.Fatalf("expected 1 alert, got %d", len(alerts))
 	}
 	if alerts[0].Container != "affine" {
-		t.Fatalf("expected current alert container name affine, got %q", alerts[0].Container)
+		t.Fatalf("expected service name affine, got %q", alerts[0].Container)
+	}
+	if alerts[0].ParsedContainerName != "elastic_ride" {
+		t.Fatalf("expected parsed alert name elastic_ride, got %q", alerts[0].ParsedContainerName)
+	}
+
+	updated, ok := st.GetContainer("affine")
+	if !ok {
+		t.Fatalf("expected renamed service in cache")
+	}
+	if updated.CurrentContainerName != "affine" {
+		t.Fatalf("expected current container name affine, got %q", updated.CurrentContainerName)
 	}
 }
