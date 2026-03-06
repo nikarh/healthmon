@@ -48,6 +48,7 @@ interface EventItem {
   container_pk: number
   container: string
   container_id: string
+  parsed_container_name: string
   type: string
   message: string
   timestamp: string
@@ -65,6 +66,7 @@ interface AlertItem {
   container_pk: number
   container: string
   container_id: string
+  parsed_container_name: string
   type: string
   message: string
   timestamp: string
@@ -257,6 +259,12 @@ const deriveChangeLine = (event: EventItem) => {
   }
   const message = event.message || ''
   if (!message) return ''
+  if (event.reason.toLowerCase() === 'rename' || event.type.toLowerCase() === 'renamed') {
+    const renamed = /^container renamed\s+(.+?)\s*->\s*(.+)$/i.exec(message)
+    if (renamed) {
+      return `${renamed[1]} → ${renamed[2]}`
+    }
+  }
   if (message.toLowerCase().includes('signal ')) {
     return message
   }
