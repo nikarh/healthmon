@@ -158,6 +158,95 @@ INSERT INTO alerts (
 	}
 }
 
+func TestMigrateInfersServiceNamesFromRuntimeNames(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "healthmon.db")
+	dbConn, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer dbConn.Close()
+
+	if err := applyMigrationsUpTo(ctx, dbConn, 10); err != nil {
+		t.Fatalf("apply base migrations: %v", err)
+	}
+
+	_, err = dbConn.SQL.ExecContext(ctx, `
+INSERT INTO containers (
+  id, name, container_id, current_container_name, image, image_tag, image_id, created_at_container, first_seen_at,
+  status, caps, read_only, user, last_event_id, updated_at, role, present,
+  registered_at, started_at, health_status, health_failing_streak, restart_loop,
+  restart_streak, healthcheck, unhealthy_since, restart_loop_since,
+  no_new_privileges, memory_reservation, memory_limit, finished_at, exit_code
+) VALUES (
+  10, '90e1683a21ff_healthmon', 'cid-healthmon', '90e1683a21ff_healthmon',
+  'ghcr.io/example/healthmon', 'latest', 'sha256:healthmon',
+  '2026-03-06T13:00:00Z', '2026-03-06T13:00:00Z', 'running', '[]', 1, '0:0',
+  NULL, '2026-03-06T13:30:14Z', 'service', 1, '2026-03-06T13:00:00Z',
+  '2026-03-06T13:00:00Z', '', 0, 0, 0, NULL, '0001-01-01T00:00:00Z',
+  '0001-01-01T00:00:00Z', 1, 0, 0, NULL, NULL
+);
+
+INSERT INTO events (
+  id, container_pk, container_name, container_id, parsed_container_name, event_type, severity, message, ts,
+  old_image, new_image, old_image_id, new_image_id, reason, details, exit_code
+) VALUES (
+  100, 10, '90e1683a21ff_healthmon', 'cid-healthmon', '90e1683a21ff_healthmon',
+  'created', 'blue', 'Container created', '2026-03-06T13:30:14Z',
+  NULL, NULL, NULL, NULL, 'create', NULL, NULL
+);
+
+INSERT INTO alerts (
+  id, container_pk, container_name, container_id, parsed_container_name, alert_type, severity, message, ts,
+  old_image, new_image, old_image_id, new_image_id, reason, details, exit_code
+) VALUES (
+  200, 10, '90e1683a21ff_healthmon', 'cid-healthmon', '90e1683a21ff_healthmon',
+  'recreated', 'blue', 'Container recreated', '2026-03-06T13:30:20Z',
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL
+);
+`)
+	if err != nil {
+		t.Fatalf("seed rows: %v", err)
+	}
+
+	if err := dbConn.Migrate(ctx); err != nil {
+		t.Fatalf("run migration: %v", err)
+	}
+
+	var serviceName, runtimeName string
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT name, current_container_name FROM containers WHERE id = 10`).Scan(&serviceName, &runtimeName); err != nil {
+		t.Fatalf("read migrated container: %v", err)
+	}
+	if serviceName != "healthmon" {
+		t.Fatalf("expected inferred service name healthmon, got %q", serviceName)
+	}
+	if runtimeName != "90e1683a21ff_healthmon" {
+		t.Fatalf("expected runtime container name to stay unchanged, got %q", runtimeName)
+	}
+
+	var eventName, eventParsed string
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT container_name, parsed_container_name FROM events WHERE id = 100`).Scan(&eventName, &eventParsed); err != nil {
+		t.Fatalf("read migrated event: %v", err)
+	}
+	if eventName != "healthmon" {
+		t.Fatalf("expected event service name healthmon, got %q", eventName)
+	}
+	if eventParsed != "90e1683a21ff_healthmon" {
+		t.Fatalf("expected parsed event name to preserve runtime name, got %q", eventParsed)
+	}
+
+	var alertName, alertParsed string
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT container_name, parsed_container_name FROM alerts WHERE id = 200`).Scan(&alertName, &alertParsed); err != nil {
+		t.Fatalf("read migrated alert: %v", err)
+	}
+	if alertName != "healthmon" {
+		t.Fatalf("expected alert service name healthmon, got %q", alertName)
+	}
+	if alertParsed != "90e1683a21ff_healthmon" {
+		t.Fatalf("expected parsed alert name to preserve runtime name, got %q", alertParsed)
+	}
+}
+
 func applyMigrationsUpTo(ctx context.Context, dbConn *DB, maxVersion int) error {
 	if _, err := dbConn.SQL.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
 		return err
