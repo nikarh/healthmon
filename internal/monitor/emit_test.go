@@ -10,6 +10,8 @@ import (
 	"healthmon/internal/config"
 	"healthmon/internal/db"
 	"healthmon/internal/store"
+
+	"github.com/moby/moby/api/types/container"
 )
 
 func TestEmitPrefersContainerID(t *testing.T) {
@@ -99,5 +101,32 @@ func TestEmitPrefersContainerID(t *testing.T) {
 	}
 	if got.ContainerID != "aaa111" {
 		t.Fatalf("expected container id aaa111, got %q", got.ContainerID)
+	}
+}
+
+func TestInspectToContainerPrefersServiceLabels(t *testing.T) {
+	mon := New(config.Config{}, store.New(nil), api.NewServer(nil, api.NewBroadcaster(), api.WSOptions{}))
+
+	info := mon.inspectToContainer(container.InspectResponse{
+		ID:   "cid-1",
+		Name: "/9c5540db617a_affine-db-migration-job",
+		State: &container.State{
+			Status: "running",
+		},
+		Config: &container.Config{
+			Image: "ghcr.io/example/affine:stable",
+			Labels: map[string]string{
+				"io.podman.compose.service": "affine-db-migration-job",
+			},
+			User: "0:0",
+		},
+		HostConfig: &container.HostConfig{},
+	})
+
+	if info.Name != "affine-db-migration-job" {
+		t.Fatalf("expected service name affine-db-migration-job, got %q", info.Name)
+	}
+	if info.CurrentContainerName != "9c5540db617a_affine-db-migration-job" {
+		t.Fatalf("expected current container name to keep runtime container name, got %q", info.CurrentContainerName)
 	}
 }
