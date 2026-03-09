@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -244,6 +245,165 @@ INSERT INTO alerts (
 	}
 	if alertParsed != "90e1683a21ff_healthmon" {
 		t.Fatalf("expected parsed alert name to preserve runtime name, got %q", alertParsed)
+	}
+}
+
+func TestMigrateDedupesContainersByContainerID(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "healthmon.db")
+	dbConn, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer dbConn.Close()
+
+	if err := applyMigrationsUpTo(ctx, dbConn, 11); err != nil {
+		t.Fatalf("apply base migrations: %v", err)
+	}
+
+	_, err = dbConn.SQL.ExecContext(ctx, `
+INSERT INTO containers (
+  id, name, container_id, current_container_name, image, image_tag, image_id, created_at_container, first_seen_at,
+  status, caps, read_only, user, last_event_id, updated_at, role, present,
+  registered_at, started_at, health_status, health_failing_streak, restart_loop,
+  restart_streak, healthcheck, unhealthy_since, restart_loop_since,
+  no_new_privileges, memory_reservation, memory_limit, finished_at, exit_code
+) VALUES
+(
+  10, 'imapsync', 'cid-imapsync', 'imapsync', 'docker.io/nikarh/fileserver-imapsync', 'latest', 'sha256:one',
+  '2026-03-01T17:00:00Z', '2026-03-01T17:00:00Z', 'running', '[]', 1, '0:0', NULL, '2026-03-06T11:30:22Z',
+  'service', 1, '2026-03-01T17:00:00Z', '2026-03-01T17:00:00Z', '', 0, 0, 0, NULL, '0001-01-01T00:00:00Z',
+  '0001-01-01T00:00:00Z', 1, 0, 0, NULL, NULL
+),
+(
+  20, '729d4232bd38_imapsync', 'cid-imapsync', '729d4232bd38_imapsync', 'docker.io/nikarh/fileserver-imapsync', 'latest', 'sha256:one',
+  '2026-03-01T17:00:00Z', '2026-03-01T17:00:00Z', 'created', '[]', 1, '0:0', NULL, '2026-03-05T21:11:55Z',
+  'service', 0, '2026-03-01T17:00:00Z', '2026-03-01T17:00:00Z', '', 0, 0, 0, NULL, '0001-01-01T00:00:00Z',
+  '0001-01-01T00:00:00Z', 1, 0, 0, NULL, NULL
+);
+
+INSERT INTO events (
+  id, container_pk, container_name, container_id, parsed_container_name, event_type, severity, message, ts,
+  old_image, new_image, old_image_id, new_image_id, reason, details, exit_code
+) VALUES (
+  100, 20, '729d4232bd38_imapsync', 'cid-imapsync', '729d4232bd38_imapsync',
+  'created', 'blue', 'Container created', '2026-03-05T21:11:50Z',
+  NULL, NULL, NULL, NULL, 'create', NULL, NULL
+);
+
+INSERT INTO alerts (
+  id, container_pk, container_name, container_id, parsed_container_name, alert_type, severity, message, ts,
+  old_image, new_image, old_image_id, new_image_id, reason, details, exit_code
+) VALUES (
+  200, 20, '729d4232bd38_imapsync', 'cid-imapsync', '729d4232bd38_imapsync',
+  'recreated', 'blue', 'Container recreated', '2026-03-05T21:11:55Z',
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL
+);
+`)
+	if err != nil {
+		t.Fatalf("seed duplicate rows: %v", err)
+	}
+
+	if err := dbConn.Migrate(ctx); err != nil {
+		t.Fatalf("run migration: %v", err)
+	}
+
+	var count int
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM containers WHERE container_id = 'cid-imapsync'`).Scan(&count); err != nil {
+		t.Fatalf("count containers: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one container row after dedupe, got %d", count)
+	}
+
+	var serviceName string
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT name FROM containers WHERE container_id = 'cid-imapsync'`).Scan(&serviceName); err != nil {
+		t.Fatalf("read surviving container: %v", err)
+	}
+	if serviceName != "imapsync" {
+		t.Fatalf("expected canonical service name imapsync, got %q", serviceName)
+	}
+
+	var eventPK int64
+	var eventName string
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT container_pk, container_name FROM events WHERE id = 100`).Scan(&eventPK, &eventName); err != nil {
+		t.Fatalf("read migrated event: %v", err)
+	}
+	if eventPK != 10 || eventName != "imapsync" {
+		t.Fatalf("expected event to point at canonical service, got %q/%d", eventName, eventPK)
+	}
+
+	var alertPK int64
+	var alertName string
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT container_pk, container_name FROM alerts WHERE id = 200`).Scan(&alertPK, &alertName); err != nil {
+		t.Fatalf("read migrated alert: %v", err)
+	}
+	if alertPK != 10 || alertName != "imapsync" {
+		t.Fatalf("expected alert to point at canonical service, got %q/%d", alertName, alertPK)
+	}
+
+	var indexName string
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_containers_container_id_unique'`).Scan(&indexName); err != nil {
+		t.Fatalf("read unique index: %v", err)
+	}
+	if indexName != "idx_containers_container_id_unique" {
+		t.Fatalf("expected unique index to be created, got %q", indexName)
+	}
+}
+
+func TestMigrateRealDumpDedupesDuplicateContainerRows(t *testing.T) {
+	ctx := context.Background()
+	srcPath := filepath.Join("..", "..", "dump.db")
+	dbPath := filepath.Join(t.TempDir(), "healthmon.db")
+
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatalf("read dump: %v", err)
+	}
+	if err := os.WriteFile(dbPath, data, 0o644); err != nil {
+		t.Fatalf("write temp dump: %v", err)
+	}
+
+	dbConn, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer dbConn.Close()
+
+	if err := dbConn.Migrate(ctx); err != nil {
+		t.Fatalf("run migration: %v", err)
+	}
+
+	var duplicateCount int
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM (SELECT container_id FROM containers GROUP BY container_id HAVING COUNT(*) > 1)`).Scan(&duplicateCount); err != nil {
+		t.Fatalf("count duplicate container ids: %v", err)
+	}
+	if duplicateCount != 0 {
+		t.Fatalf("expected no duplicate container ids after migration, got %d", duplicateCount)
+	}
+
+	for _, removedName := range []string{
+		"729d4232bd38_imapsync",
+		"c7710be6ea4d_qbittorrent",
+		"f0ff6885fbf2_filebrowser",
+	} {
+		var count int
+		if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM containers WHERE name = ?`, removedName).Scan(&count); err != nil {
+			t.Fatalf("count removed container %s: %v", removedName, err)
+		}
+		if count != 0 {
+			t.Fatalf("expected %s to be removed, found %d rows", removedName, count)
+		}
+	}
+
+	for _, expectedName := range []string{"imapsync", "qbittorrent", "filebrowser"} {
+		var count int
+		if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM containers WHERE name = ?`, expectedName).Scan(&count); err != nil {
+			t.Fatalf("count canonical container %s: %v", expectedName, err)
+		}
+		if count != 1 {
+			t.Fatalf("expected one %s row after migration, found %d", expectedName, count)
+		}
 	}
 }
 
