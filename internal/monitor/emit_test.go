@@ -126,6 +126,9 @@ func TestInspectToContainerPrefersServiceLabels(t *testing.T) {
 	if info.Name != "affine-db-migration-job" {
 		t.Fatalf("expected service name affine-db-migration-job, got %q", info.Name)
 	}
+	if info.ServiceKey != "podman-compose:::affine-db-migration-job" {
+		t.Fatalf("expected service key from labels, got %q", info.ServiceKey)
+	}
 	if info.CurrentContainerName != "9c5540db617a_affine-db-migration-job" {
 		t.Fatalf("expected current container name to keep runtime container name, got %q", info.CurrentContainerName)
 	}

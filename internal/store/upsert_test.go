@@ -217,3 +217,91 @@ func TestHistoryKeepsParsedContainerNamesSeparateFromServiceName(t *testing.T) {
 		t.Fatalf("expected current container name affine, got %q", updated.CurrentContainerName)
 	}
 }
+
+func TestUpsertMergesContainerIDDuplicateIntoCanonicalService(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "healthmon.db")
+	dbConn, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer dbConn.Close()
+
+	if err := dbConn.Migrate(ctx); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	st := New(dbConn.SQL)
+	if err := st.Load(ctx); err != nil {
+		t.Fatalf("load store: %v", err)
+	}
+
+	now := time.Now().UTC()
+	placeholder := Container{
+		Name:                 "729d4232bd38_imapsync",
+		ContainerID:          "cid-imapsync",
+		CurrentContainerName: "729d4232bd38_imapsync",
+		Image:                "docker.io/nikarh/fileserver-imapsync",
+		ImageTag:             "latest",
+		ImageID:              "sha256:imapsync",
+		CreatedAt:            now.Add(-time.Hour),
+		RegisteredAt:         now.Add(-time.Hour),
+		StartedAt:            now.Add(-time.Hour),
+		Status:               "created",
+		Role:                 "service",
+		Caps:                 []string{},
+		User:                 "0:0",
+		UpdatedAt:            now.Add(-time.Minute),
+		Present:              true,
+	}
+	if err := st.UpsertContainer(ctx, placeholder); err != nil {
+		t.Fatalf("upsert placeholder: %v", err)
+	}
+	duplicate, ok := st.GetContainer("729d4232bd38_imapsync")
+	if !ok {
+		t.Fatalf("expected duplicate placeholder in cache")
+	}
+
+	canonical := Container{
+		Name:                 "imapsync",
+		ContainerID:          "cid-imapsync",
+		CurrentContainerName: "imapsync",
+		Image:                "docker.io/nikarh/fileserver-imapsync",
+		ImageTag:             "latest",
+		ImageID:              "sha256:imapsync",
+		CreatedAt:            placeholder.CreatedAt,
+		RegisteredAt:         placeholder.RegisteredAt,
+		StartedAt:            placeholder.StartedAt,
+		Status:               "running",
+		Role:                 "service",
+		Caps:                 []string{},
+		User:                 "0:0",
+		UpdatedAt:            now,
+		Present:              true,
+	}
+	if err := st.UpsertContainer(ctx, canonical); err != nil {
+		t.Fatalf("upsert canonical: %v", err)
+	}
+
+	merged, ok := st.GetContainer("imapsync")
+	if !ok {
+		t.Fatalf("expected canonical service in cache")
+	}
+	if merged.ID != duplicate.ID {
+		t.Fatalf("expected canonical service to reuse duplicate row id %d, got %d", duplicate.ID, merged.ID)
+	}
+	if merged.CurrentContainerName != "imapsync" {
+		t.Fatalf("expected runtime name to be updated, got %q", merged.CurrentContainerName)
+	}
+	if _, ok := st.GetContainer("729d4232bd38_imapsync"); ok {
+		t.Fatalf("expected duplicate runtime-name row to be removed from cache")
+	}
+
+	var count int
+	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM containers WHERE container_id = ?`, canonical.ContainerID).Scan(&count); err != nil {
+		t.Fatalf("count merged rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one row for container id, got %d", count)
+	}
+}

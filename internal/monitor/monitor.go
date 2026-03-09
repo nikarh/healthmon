@@ -32,13 +32,13 @@ type Monitor struct {
 }
 
 const composeServiceLabel = "com.docker.compose.service"
-
-var serviceNameLabels = []string{
-	"healthmon.name",
-	composeServiceLabel,
-	"io.podman.compose.service",
-	"com.docker.swarm.service.name",
-}
+const composeProjectLabel = "com.docker.compose.project"
+const composeWorkdirLabel = "com.docker.compose.project.working_dir"
+const podmanComposeServiceLabel = "io.podman.compose.service"
+const podmanComposeProjectLabel = "io.podman.compose.project"
+const podmanComposeWorkdirLabel = "io.podman.compose.project.working_dir"
+const swarmServiceLabel = "com.docker.swarm.service.name"
+const healthmonNameLabel = "healthmon.name"
 
 func New(cfg config.Config, store *store.Store, server *api.Server) *Monitor {
 	return &Monitor{
@@ -940,7 +940,7 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 		user = "0:0"
 	}
 	role := resolveRole(labels)
-	serviceName := resolveServiceName(labels, name)
+	serviceName, serviceKey, composeService, composeProject, composeWorkdir := resolveServiceIdentity(labels, name)
 	healthStatus := ""
 	healthFailingStreak := 0
 	if inspect.State != nil && inspect.State.Health != nil {
@@ -978,6 +978,10 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 
 	return store.Container{
 		Name:                 serviceName,
+		ServiceKey:           serviceKey,
+		ComposeService:       composeService,
+		ComposeProject:       composeProject,
+		ComposeWorkdir:       composeWorkdir,
 		ContainerID:          inspect.ID,
 		CurrentContainerName: name,
 		Image:                imageName,
@@ -1003,16 +1007,34 @@ func (m *Monitor) inspectToContainer(inspect container.InspectResponse) store.Co
 	}
 }
 
-func resolveServiceName(labels map[string]string, fallback string) string {
-	for _, key := range serviceNameLabels {
-		if labels == nil {
-			break
-		}
-		if value := strings.TrimSpace(labels[key]); value != "" {
-			return value
-		}
+func resolveServiceIdentity(labels map[string]string, fallback string) (serviceName, serviceKey, composeService, composeProject, composeWorkdir string) {
+	if labels == nil {
+		return fallback, "", "", "", ""
 	}
-	return fallback
+
+	if value := strings.TrimSpace(labels[healthmonNameLabel]); value != "" {
+		return value, "healthmon:" + value, "", "", ""
+	}
+
+	composeService = strings.TrimSpace(labels[composeServiceLabel])
+	composeProject = strings.TrimSpace(labels[composeProjectLabel])
+	composeWorkdir = strings.TrimSpace(labels[composeWorkdirLabel])
+	if composeService != "" {
+		return composeService, "compose:" + composeProject + ":" + composeWorkdir + ":" + composeService, composeService, composeProject, composeWorkdir
+	}
+
+	composeService = strings.TrimSpace(labels[podmanComposeServiceLabel])
+	composeProject = strings.TrimSpace(labels[podmanComposeProjectLabel])
+	composeWorkdir = strings.TrimSpace(labels[podmanComposeWorkdirLabel])
+	if composeService != "" {
+		return composeService, "podman-compose:" + composeProject + ":" + composeWorkdir + ":" + composeService, composeService, composeProject, composeWorkdir
+	}
+
+	if value := strings.TrimSpace(labels[swarmServiceLabel]); value != "" {
+		return value, "swarm:" + value, "", "", ""
+	}
+
+	return fallback, "", "", "", ""
 }
 
 func formatMaybeTime(t time.Time) string {

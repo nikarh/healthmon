@@ -5,6 +5,10 @@ import "time"
 type Container struct {
 	ID                   int64
 	Name                 string
+	ServiceKey           string
+	ComposeService       string
+	ComposeProject       string
+	ComposeWorkdir       string
 	ContainerID          string
 	CurrentContainerName string
 	Image                string
