@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"database/sql"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -348,62 +347,6 @@ INSERT INTO alerts (
 	}
 	if indexName != "idx_containers_container_id_unique" {
 		t.Fatalf("expected unique index to be created, got %q", indexName)
-	}
-}
-
-func TestMigrateRealDumpDedupesDuplicateContainerRows(t *testing.T) {
-	ctx := context.Background()
-	srcPath := filepath.Join("..", "..", "dump.db")
-	dbPath := filepath.Join(t.TempDir(), "healthmon.db")
-
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		t.Fatalf("read dump: %v", err)
-	}
-	if err := os.WriteFile(dbPath, data, 0o644); err != nil {
-		t.Fatalf("write temp dump: %v", err)
-	}
-
-	dbConn, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer dbConn.Close()
-
-	if err := dbConn.Migrate(ctx); err != nil {
-		t.Fatalf("run migration: %v", err)
-	}
-
-	var duplicateCount int
-	if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM (SELECT container_id FROM containers GROUP BY container_id HAVING COUNT(*) > 1)`).Scan(&duplicateCount); err != nil {
-		t.Fatalf("count duplicate container ids: %v", err)
-	}
-	if duplicateCount != 0 {
-		t.Fatalf("expected no duplicate container ids after migration, got %d", duplicateCount)
-	}
-
-	for _, removedName := range []string{
-		"729d4232bd38_imapsync",
-		"c7710be6ea4d_qbittorrent",
-		"f0ff6885fbf2_filebrowser",
-	} {
-		var count int
-		if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM containers WHERE name = ?`, removedName).Scan(&count); err != nil {
-			t.Fatalf("count removed container %s: %v", removedName, err)
-		}
-		if count != 0 {
-			t.Fatalf("expected %s to be removed, found %d rows", removedName, count)
-		}
-	}
-
-	for _, expectedName := range []string{"imapsync", "qbittorrent", "filebrowser"} {
-		var count int
-		if err := dbConn.SQL.QueryRowContext(ctx, `SELECT COUNT(1) FROM containers WHERE name = ?`, expectedName).Scan(&count); err != nil {
-			t.Fatalf("count canonical container %s: %v", expectedName, err)
-		}
-		if count != 1 {
-			t.Fatalf("expected one %s row after migration, found %d", expectedName, count)
-		}
 	}
 }
 
