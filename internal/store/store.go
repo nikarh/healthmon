@@ -1108,6 +1108,17 @@ LIMIT 1
 	return a, true, nil
 }
 
+func (s *Store) GetLatestEventTimestamp(ctx context.Context) (time.Time, bool, error) {
+	var ts sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT MAX(ts) FROM events`).Scan(&ts); err != nil {
+		return time.Time{}, false, err
+	}
+	if !ts.Valid || strings.TrimSpace(ts.String) == "" {
+		return time.Time{}, false, nil
+	}
+	return parseTime(ts.String), true, nil
+}
+
 func (s *Store) ContainerNames() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

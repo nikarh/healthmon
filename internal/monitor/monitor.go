@@ -3,7 +3,9 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strconv"
 	"strings"
@@ -58,26 +60,77 @@ func (m *Monitor) Start(ctx context.Context) error {
 	}
 	m.docker = cli
 
+	syncStartedAt := time.Now().UTC()
 	if err := m.syncExisting(ctx); err != nil {
 		return err
 	}
 
 	go m.watchHeals(ctx)
 
-	stream := cli.Events(ctx, client.EventsListOptions{})
+	for {
+		since, err := m.replaySince(ctx, syncStartedAt)
+		if err != nil {
+			return err
+		}
+		nextSince, err := m.consumeEvents(ctx, since)
+		if err == nil || errors.Is(err, context.Canceled) {
+			if err == nil {
+				continue
+			}
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		log.Printf("docker events stream error: %v", err)
+		syncStartedAt = nextSince
+		time.Sleep(time.Second)
+	}
+}
+
+func (m *Monitor) replaySince(ctx context.Context, syncStartedAt time.Time) (time.Time, error) {
+	since := syncStartedAt
+	if latest, ok, err := m.store.GetLatestEventTimestamp(ctx); err != nil {
+		return time.Time{}, err
+	} else if ok && !latest.IsZero() {
+		since = latest.Add(time.Nanosecond)
+	}
+	return since, nil
+}
+
+func (m *Monitor) consumeEvents(ctx context.Context, since time.Time) (time.Time, error) {
+	stream := m.docker.Events(ctx, client.EventsListOptions{Since: formatMaybeTime(since)})
+	nextSince := since
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nextSince, ctx.Err()
 		case err := <-stream.Err:
-			return err
+			if err == nil {
+				return nextSince, io.EOF
+			}
+			return nextSince, err
 		case msg := <-stream.Messages:
+			msgTime := eventTimestamp(msg)
+			if !msgTime.IsZero() && !msgTime.Before(nextSince) {
+				nextSince = msgTime.Add(time.Nanosecond)
+			}
 			if msg.Type != "container" {
 				continue
 			}
 			m.handleEvent(ctx, msg)
 		}
 	}
+}
+
+func eventTimestamp(msg events.Message) time.Time {
+	if msg.TimeNano > 0 {
+		return time.Unix(0, msg.TimeNano).UTC()
+	}
+	if msg.Time > 0 {
+		return time.Unix(msg.Time, 0).UTC()
+	}
+	return time.Time{}
 }
 
 func (m *Monitor) syncExisting(ctx context.Context) error {

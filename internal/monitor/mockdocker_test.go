@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"healthmon/internal/db"
 	"healthmon/internal/store"
 
+	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"nhooyr.io/websocket"
 )
@@ -68,24 +70,27 @@ func (q *inspectQueue) Next(id string) (json.RawMessage, bool) {
 }
 
 type mockDockerServer struct {
-	t          *testing.T
-	events     []events.Message
-	inspects   *inspectQueue
-	httpServer *http.Server
-	listener   net.Listener
-	doneOnce   sync.Once
-	doneCh     chan struct{}
-	allowCh    chan struct{}
+	t            *testing.T
+	events       []events.Message
+	inspects     *inspectQueue
+	containers   []containertypes.Summary
+	requireSince bool
+	httpServer   *http.Server
+	listener     net.Listener
+	doneOnce     sync.Once
+	doneCh       chan struct{}
+	allowCh      chan struct{}
 }
 
 func newMockDockerServer(t *testing.T, events []events.Message, inspects []inspectRecord) *mockDockerServer {
 	t.Helper()
 	return &mockDockerServer{
-		t:        t,
-		events:   events,
-		inspects: newInspectQueue(inspects),
-		doneCh:   make(chan struct{}),
-		allowCh:  make(chan struct{}, 1),
+		t:          t,
+		events:     events,
+		inspects:   newInspectQueue(inspects),
+		doneCh:     make(chan struct{}),
+		allowCh:    make(chan struct{}, 1),
+		containers: []containertypes.Summary{},
 	}
 }
 
@@ -140,14 +145,26 @@ func (m *mockDockerServer) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	case path == "/containers/json":
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("[]"))
+		if err := json.NewEncoder(w).Encode(m.containers); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	case path == "/events":
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		flusher, _ := w.(http.Flusher)
 		enc := json.NewEncoder(w)
+		since := parseEventSince(r.URL.Query().Get("since"))
 		for _, msg := range m.events {
+			if m.requireSince && since.IsZero() {
+				continue
+			}
+			if !since.IsZero() {
+				msgTime := eventTimestamp(msg)
+				if !msgTime.IsZero() && msgTime.Before(since) {
+					continue
+				}
+			}
 			select {
 			case <-m.allowCh:
 			case <-r.Context().Done():
@@ -178,6 +195,25 @@ func (m *mockDockerServer) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func parseEventSince(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return parsed.UTC()
+	}
+	if secs, err := strconv.ParseFloat(raw, 64); err == nil {
+		whole := int64(secs)
+		nanos := int64((secs - float64(whole)) * float64(time.Second))
+		return time.Unix(whole, nanos).UTC()
+	}
+	if secs, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return time.Unix(secs, 0).UTC()
+	}
+	return time.Time{}
 }
 
 var dockerVersionPrefix = regexp.MustCompile(`^/v[0-9]+\.[0-9]+`)
