@@ -6,7 +6,7 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
-	modernc.org/sqlite v1.51.0
+	modernc.org/sqlite v1.52.0
 	nhooyr.io/websocket v1.8.17
 )
 
