@@ -4,8 +4,8 @@ go 1.26.0
 
 require (
 	github.com/distribution/reference v0.6.0
-	github.com/moby/moby/api v1.54.2
-	github.com/moby/moby/client v0.4.1
+	github.com/moby/moby/api v1.55.0
+	github.com/moby/moby/client v0.5.0
 	modernc.org/sqlite v1.51.0
 	nhooyr.io/websocket v1.8.17
 )
