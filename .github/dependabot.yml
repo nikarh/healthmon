@@ -25,11 +25,11 @@ updates:
       npm-minor-patch:
         update-types: ["minor", "patch"]
     ignore:
-      # eslint-plugin-react and eslint-plugin-jsx-a11y do not support eslint 10 yet.
-      - dependency-name: "eslint"
-        update-types: ["version-update:semver-major"]
+      # oxlint.config.ts loads these presets; @eslint/js 10 needs eslint 10, which
+      # eslint-plugin-react and eslint-plugin-jsx-a11y do not support yet.
       - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
-      # typescript-eslint requires typescript < 6.1.
+      # "typescript" is an alias of TypeScript 6 for typescript-eslint (requires < 6.1);
+      # the compiler itself is TypeScript 7 via @typescript/native.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]

@@ -1,10 +1,11 @@
 # Build backend (expects prebuilt UI in cmd/healthmon/web/dist)
-FROM golang:1.27.2-trixie AS gobuild
+FROM --platform=$BUILDPLATFORM golang:1.27.2-trixie AS gobuild
+ARG TARGETOS TARGETARCH
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/healthmon ./cmd/healthmon
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/healthmon ./cmd/healthmon
 
 # Final
 FROM scratch
