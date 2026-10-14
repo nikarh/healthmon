@@ -23,8 +23,8 @@ import (
 	"healthmon/internal/db"
 	"healthmon/internal/store"
 
+	"github.com/coder/websocket"
 	"github.com/moby/moby/api/types/events"
-	"nhooyr.io/websocket"
 )
 
 type inspectRecord struct {

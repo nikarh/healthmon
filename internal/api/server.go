@@ -15,7 +15,7 @@ import (
 
 	"healthmon/internal/store"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 type Server struct {

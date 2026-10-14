@@ -1,5 +1,5 @@
 # Build UI
-FROM node:25.6-bullseye AS webbuild
+FROM node:26-trixie AS webbuild
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -8,7 +8,7 @@ RUN mkdir -p /app/cmd/healthmon/web/dist
 RUN npm run build
 
 # Build backend
-FROM golang:1.26.0-trixie AS gobuild
+FROM golang:1.27.2-trixie AS gobuild
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download

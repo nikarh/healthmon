@@ -105,6 +105,12 @@ interface PageState {
 }
 
 const PAGE_SIZE = 20
+
+const fetchContainers = async (): Promise<Container[] | null> => {
+  const res = await fetch('/api/containers')
+  if (!res.ok) return null
+  return (await res.json()) as Container[]
+}
 type ViewMode = 'containers' | 'events' | 'alerts'
 
 const statusClass = (status: string) => {
@@ -392,10 +398,8 @@ export default function App() {
   }, [containers, query])
 
   const loadContainers = useCallback(async () => {
-    const res = await fetch('/api/containers')
-    if (!res.ok) return
-    const data = (await res.json()) as Container[]
-    setContainers(data)
+    const data = await fetchContainers()
+    if (data) setContainers(data)
   }, [])
 
   const loadEvents = useCallback(
@@ -531,8 +535,14 @@ export default function App() {
   )
 
   useEffect(() => {
-    void loadContainers()
-  }, [loadContainers])
+    let cancelled = false
+    void fetchContainers().then((data) => {
+      if (data && !cancelled) setContainers(data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -545,23 +555,19 @@ export default function App() {
         const name = update.container.name
         setContainers((prev) => prev.filter((item) => item.name !== name))
         setExpanded((prev) => {
-          const { [name]: removed, ...rest } = prev
-          void removed
+          const { [name]: _removed, ...rest } = prev
           return rest
         })
         setEvents((prev) => {
-          const { [name]: removed, ...rest } = prev
-          void removed
+          const { [name]: _removed, ...rest } = prev
           return rest
         })
         setFlash((prev) => {
-          const { [name]: removed, ...rest } = prev
-          void removed
+          const { [name]: _removed, ...rest } = prev
           return rest
         })
         setEventTotals((prev) => {
-          const { [name]: removed, ...rest } = prev
-          void removed
+          const { [name]: _removed, ...rest } = prev
           return rest
         })
         return
