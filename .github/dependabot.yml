@@ -4,11 +4,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    rebase-strategy: "auto"
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
+    rebase-strategy: "auto"
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
       interval: "weekly"
+    rebase-strategy: "auto"
