@@ -13,9 +13,9 @@
     "favicons": "node scripts/generate-favicons.mjs"
   },
   "dependencies": {
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "react-virtualized-auto-sizer": "^2.0.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-virtualized-auto-sizer": "^2.0.4",
     "react-window": "^2.3.4"
   },
   "devDependencies": {
