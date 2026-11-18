@@ -5,8 +5,8 @@ go 1.27.0
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/distribution/reference v0.6.0
-	github.com/moby/moby/api v1.56.1
-	github.com/moby/moby/client v0.6.2
+	github.com/moby/moby/api v1.57.0
+	github.com/moby/moby/client v0.6.3
 	modernc.org/sqlite v1.62.0
 )
 
