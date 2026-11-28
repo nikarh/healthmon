@@ -36,10 +36,13 @@ const upstream: RuleMap = {
 // oxlint counterpart are skipped explicitly. If a preset upgrade adds another one, oxlint
 // fails and names it. Legacy octal literals are a syntax error under ES modules, enums are
 // rejected by `erasableSyntaxOnly` in tsconfig, and oxlint's no-unused-vars understands JSX
-// usage natively. The rest are only ever switched off by the presets.
+// usage natively. `no-unsafe-class-instance-assignment` (strictTypeChecked since
+// typescript-eslint 8.73) is in tsgolint but not yet in oxlint's rule list; enable it once
+// oxlint accepts it. The rest are only ever switched off by the presets.
 const UNSUPPORTED = new Set([
   'no-octal',
   '@typescript-eslint/no-unsafe-enum-assignment',
+  '@typescript-eslint/no-unsafe-class-instance-assignment',
   'react/jsx-uses-vars',
   'react/jsx-uses-react',
   'no-dupe-args',
